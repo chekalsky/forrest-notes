@@ -70,6 +70,17 @@
 #define MAX_TAGS   20
 #define DEFAULT_NOTE_TAG "undefined"    // provisional tag written when recording starts
 
+/* Speakers / diarization */
+#define SPEAKERS_DIR           "/speakers"
+#define SPEAKERS_INDEX         "/speakers/index.csv"
+#define MAX_SPEAKERS           16
+#define MAX_KNOWN_SPEAKER_REFS 4
+#define DIARIZE_CHUNK_MS       (8UL * 60UL * 1000UL)           // ~8 min → ~15 MB PCM
+#define DIARIZE_MAX_UPLOAD     (20UL * 1024UL * 1024UL)        // stay under API 25 MB
+#define SPEAKER_REF_MIN_MS     2000UL
+#define SPEAKER_REF_MAX_MS     5000UL
+#define DIARIZE_HTTP_TIMEOUT_MS (10UL * 60UL * 1000UL)         // long meetings / chunk
+
 /* UI timing */
 #define REC_HOLD_MS         350
 #define REC_TRIPLE_GAP_MS   700     // max gap between taps for a 3× meeting start/stop
@@ -86,7 +97,7 @@
 
 /* Time & firmware */
 #define LOCAL_TIME_OFFSET_MIN  120   // UTC+2 (Germany summer). Set to your offset.
-#define FIRMWARE_VERSION       "v1.0"
-#define FW_VERSION             "v1.0"
+#define FIRMWARE_VERSION       "v1.1"
+#define FW_VERSION             "v1.1"
 
 #endif // CONFIG_H

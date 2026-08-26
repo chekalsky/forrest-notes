@@ -44,6 +44,7 @@ extern "C" {
 #include "src/app/record.h"
 #include "src/app/config_store.h"
 #include "src/app/obsidian.h"
+#include "src/app/speakers.h"
 
 // All pin, timing, path and threshold constants live in config.h.
 
@@ -329,9 +330,11 @@ void setup() {
     while (true) delay(1000);
   }
   if (!SD_MMC.exists(NOTES_DIR)) SD_MMC.mkdir(NOTES_DIR);
+  speakersEnsureDir();
+  speakersLoad();
   loadTags();
   loadIndex();
-  Serial.printf("[SD] %d notes\n", (int)noteIndex.size());
+  Serial.printf("[SD] %d notes, %d speakers\n", (int)noteIndex.size(), speakersCount());
 
   if (wakeToMenuRequested) {
     menuCursor = 0;

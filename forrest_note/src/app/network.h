@@ -17,6 +17,12 @@ void handleTagsPage();
 void handleTagAdd();
 void handleTagDelete();
 void handleNoteDelete();
+void handleSpeakersPage();
+void handleSpeakerUpload();
+void handleSpeakerAddDone();
+void handleSpeakerRename();
+void handleSpeakerDelete();
+void handleSpeakerAudio();
 
 void setupTransferServer();
 void stopTransferMode();

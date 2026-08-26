@@ -7,6 +7,7 @@
 #include "esp_heap_caps.h"
 #include "notes.h"
 #include "ui.h"
+#include "wav_util.h"
 #include "../../sounds.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -46,28 +47,12 @@ static void recProducerTask(void* arg) {
   vTaskDelete(NULL);
 }
 
-// Write a playable PCM WAV header for the bytes captured so far. Callers must
-// seek back to the data append position afterward if still recording.
-static void writeWavHeader(File& f, uint32_t dataBytes) {
-  uint32_t dB = dataBytes, fS = dB + 36, bR = SAMPLE_RATE * 2;
-  uint16_t bA = 2, aF = 1, ch = 1, bps = 16;
-  uint32_t fL = 16, sr = SAMPLE_RATE;
-  f.seek(0);
-  f.write((uint8_t*)"RIFF", 4); f.write((uint8_t*)&fS, 4);
-  f.write((uint8_t*)"WAVE", 4); f.write((uint8_t*)"fmt ", 4);
-  f.write((uint8_t*)&fL, 4);   f.write((uint8_t*)&aF, 2);
-  f.write((uint8_t*)&ch, 2);   f.write((uint8_t*)&sr, 4);
-  f.write((uint8_t*)&bR, 4);   f.write((uint8_t*)&bA, 2);
-  f.write((uint8_t*)&bps, 2);
-  f.write((uint8_t*)"data", 4); f.write((uint8_t*)&dB, 4);
-}
-
 // Push header sizes + FatFS buffers to the card so a power loss still leaves
 // a playable (truncated) WAV. Returns the byte offset where PCM continues.
 static uint32_t checkpointWav(File& f, uint32_t dataBytes) {
   uint32_t dataPos = 44UL + dataBytes;
   f.flush();
-  writeWavHeader(f, dataBytes);
+  writePcmWavHeader(f, dataBytes);
   f.flush();
   f.seek(dataPos);
   return dataPos;
@@ -82,7 +67,7 @@ bool record(bool holdMode) {
   if (!f) return false;
 
   // Valid header from the first byte — empty data chunk until the first checkpoint.
-  writeWavHeader(f, 0);
+  writePcmWavHeader(f, 0);
   f.flush();
   f.seek(44);
 

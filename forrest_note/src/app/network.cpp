@@ -7,6 +7,8 @@
 #include "rtc.h"
 #include "ui.h"
 #include "config_store.h"
+#include "speakers.h"
+#include "wav_util.h"
 #include "WiFi.h"
 #include "WiFiClientSecure.h"
 #include <WebServer.h>
@@ -21,26 +23,147 @@
 extern const uint8_t x509_crt_bundle_start[] asm("_binary_x509_crt_bundle_start");
 extern const uint8_t x509_crt_bundle_end[]   asm("_binary_x509_crt_bundle_end");
 
-static bool transcribeOnce(const String& wavPath, int noteNum) {
+static const char B64_TAB[] =
+  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+static size_t base64EncodedLen(size_t n) { return 4 * ((n + 2) / 3); }
+
+static bool streamBase64File(WiFiClientSecure& client, File& f) {
+  uint8_t in[3];
+  while (f.available()) {
+    int n = 0;
+    while (n < 3 && f.available()) {
+      int c = f.read();
+      if (c < 0) break;
+      in[n++] = (uint8_t)c;
+    }
+    if (n == 0) break;
+    char out[4];
+    out[0] = B64_TAB[in[0] >> 2];
+    out[1] = B64_TAB[((in[0] & 0x03) << 4) | (n > 1 ? (in[1] >> 4) : 0)];
+    out[2] = (n > 1) ? B64_TAB[((in[1] & 0x0F) << 2) | (n > 2 ? (in[2] >> 6) : 0)] : '=';
+    out[3] = (n > 2) ? B64_TAB[in[2] & 0x3F] : '=';
+    if (client.write((uint8_t*)out, 4) != 4) return false;
+  }
+  return true;
+}
+
+static String formatTs(float sec) {
+  int s = (int)sec;
+  if (s < 0) s = 0;
+  char buf[16];
+  snprintf(buf, sizeof(buf), "%d:%02d", s / 60, s % 60);
+  return String(buf);
+}
+
+// Turn diarized_json into a readable speaker script. timeOffsetSec shifts chunk-local times.
+static String diarizedJsonToScript(const String& json, float timeOffsetSec) {
+  DynamicJsonDocument doc(json.length() + 4096);
+  DeserializationError err = deserializeJson(doc, json);
+  if (err) {
+    Serial.printf("[Diarize] json: %s\n", err.c_str());
+    return "";
+  }
+
+  String out;
+  JsonArray segs = doc["segments"].as<JsonArray>();
+  if (segs.isNull() || segs.size() == 0) {
+    // Fallback: flat text field
+    String text = doc["text"] | "";
+    text.trim();
+    return text;
+  }
+
+  String curSpeaker = "";
+  for (JsonObject seg : segs) {
+    String sp = seg["speaker"] | "A";
+    String tx = seg["text"] | "";
+    tx.trim();
+    if (!tx.length()) continue;
+    float st = seg["start"] | 0.0f;
+    st += timeOffsetSec;
+    if (sp != curSpeaker) {
+      if (out.length()) out += "\n\n";
+      out += "**" + sp + "** [" + formatTs(st) + "]\n";
+      curSpeaker = sp;
+    } else {
+      out += " ";
+    }
+    out += tx;
+  }
+  out.trim();
+  return out;
+}
+
+// Diarize one WAV file (already ≤ DIARIZE_MAX_UPLOAD). Returns speaker script or "".
+static String diarizeFileOnce(const String& wavPath, float timeOffsetSec) {
   String oaiKey = cfg::openaiKey();
-  if (oaiKey.length() == 0) { Serial.println("[Whisper] no API key set"); return false; }
+  if (oaiKey.length() == 0) { Serial.println("[Diarize] no API key"); return ""; }
 
   File f = SD_MMC.open(wavPath.c_str());
-  if (!f) return false;
+  if (!f) return "";
   size_t fileSize = f.size();
+  f.close();
+  if (fileSize == 0 || fileSize > DIARIZE_MAX_UPLOAD) {
+    Serial.printf("[Diarize] bad size %u\n", (unsigned)fileSize);
+    return "";
+  }
 
-  String bnd = "----PalaBoundary";
-  String pre = "--" + bnd + "\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\nwhisper-1\r\n"
-               "--" + bnd + "\r\nContent-Disposition: form-data; name=\"file\"; filename=\"note.wav\"\r\nContent-Type: audio/wav\r\n\r\n";
+  speakersLoad();
+  Speaker refs[MAX_KNOWN_SPEAKER_REFS];
+  int nRefs = speakersPickForDiarize(refs, MAX_KNOWN_SPEAKER_REFS);
+
+  // Precompute reference file sizes for Content-Length.
+  size_t refRaw[MAX_KNOWN_SPEAKER_REFS] = {};
+  size_t refB64[MAX_KNOWN_SPEAKER_REFS] = {};
+  const char* dataUrlPrefix = "data:audio/wav;base64,";
+  size_t prefixLen = strlen(dataUrlPrefix);
+  for (int i = 0; i < nRefs; i++) {
+    String rp = speakersWavPath(refs[i].id);
+    File rf = SD_MMC.open(rp.c_str());
+    if (!rf) { nRefs = i; break; }
+    refRaw[i] = rf.size();
+    rf.close();
+    refB64[i] = prefixLen + base64EncodedLen(refRaw[i]);
+  }
+
+  String bnd = "----ForrestDiarize";
+  String pre = "--" + bnd + "\r\n"
+               "Content-Disposition: form-data; name=\"model\"\r\n\r\n"
+               "gpt-4o-transcribe-diarize\r\n"
+               "--" + bnd + "\r\n"
+               "Content-Disposition: form-data; name=\"response_format\"\r\n\r\n"
+               "diarized_json\r\n"
+               "--" + bnd + "\r\n"
+               "Content-Disposition: form-data; name=\"chunking_strategy\"\r\n\r\n"
+               "auto\r\n";
+
+  size_t midFixed = 0;
+  for (int i = 0; i < nRefs; i++) {
+    String namePart = "--" + bnd + "\r\n"
+      "Content-Disposition: form-data; name=\"known_speaker_names[]\"\r\n\r\n"
+      + String(refs[i].name) + "\r\n";
+    String refHead = "--" + bnd + "\r\n"
+      "Content-Disposition: form-data; name=\"known_speaker_references[]\"\r\n\r\n";
+    midFixed += namePart.length() + refHead.length() + refB64[i] + 2; // \r\n after b64
+  }
+
+  String fileHead = "--" + bnd + "\r\n"
+    "Content-Disposition: form-data; name=\"file\"; filename=\"note.wav\"\r\n"
+    "Content-Type: audio/wav\r\n\r\n";
   String post = "\r\n--" + bnd + "--\r\n";
-  size_t totalLen = pre.length() + fileSize + post.length();
+
+  size_t totalLen = pre.length() + midFixed + fileHead.length() + fileSize + post.length();
 
   WiFiClientSecure client;
   client.setCACertBundle(x509_crt_bundle_start,
                          (size_t)(x509_crt_bundle_end - x509_crt_bundle_start));
-  client.setHandshakeTimeout(15);  // seconds
+  client.setHandshakeTimeout(30);
 
-  if (!client.connect("api.openai.com", 443, 15000 /* ms */)) { f.close(); return false; }
+  if (!client.connect("api.openai.com", 443, 20000)) {
+    Serial.println("[Diarize] connect failed");
+    return "";
+  }
 
   client.printf("POST /v1/audio/transcriptions HTTP/1.1\r\n"
                 "Host: api.openai.com\r\n"
@@ -51,49 +174,174 @@ static bool transcribeOnce(const String& wavPath, int noteNum) {
                 oaiKey.c_str(), bnd.c_str(), (unsigned)totalLen);
   client.print(pre);
 
+  for (int i = 0; i < nRefs; i++) {
+    client.print("--" + bnd + "\r\n"
+                 "Content-Disposition: form-data; name=\"known_speaker_names[]\"\r\n\r\n");
+    client.print(refs[i].name);
+    client.print("\r\n");
+    client.print("--" + bnd + "\r\n"
+                 "Content-Disposition: form-data; name=\"known_speaker_references[]\"\r\n\r\n");
+    client.print(dataUrlPrefix);
+    File rf = SD_MMC.open(speakersWavPath(refs[i].id).c_str());
+    if (!rf || !streamBase64File(client, rf)) {
+      if (rf) rf.close();
+      client.stop();
+      Serial.println("[Diarize] ref stream failed");
+      return "";
+    }
+    rf.close();
+    client.print("\r\n");
+  }
+
+  client.print(fileHead);
+  File audio = SD_MMC.open(wavPath.c_str());
+  if (!audio) { client.stop(); return ""; }
   uint8_t* chunk = (uint8_t*)heap_caps_malloc(4096, MALLOC_CAP_8BIT);
-  if (!chunk) { f.close(); client.stop(); return false; }
-  while (f.available()) {
-    int n = f.read(chunk, 4096);
+  if (!chunk) { audio.close(); client.stop(); return ""; }
+  while (audio.available()) {
+    int n = audio.read(chunk, 4096);
     if (n <= 0) break;
-    client.write(chunk, n);
+    if (client.write(chunk, n) != (size_t)n) {
+      heap_caps_free(chunk);
+      audio.close();
+      client.stop();
+      Serial.println("[Diarize] upload stalled");
+      return "";
+    }
   }
   heap_caps_free(chunk);
-  f.close();
+  audio.close();
   client.print(post);
 
-  uint32_t deadline = millis() + 90000;
-  while (!client.available() && millis() < deadline) delay(20);
+  // Stream response body to SD to keep RAM flat.
+  char respPath[] = "/notes/_diar_resp.json";
+  if (SD_MMC.exists(respPath)) SD_MMC.remove(respPath);
+  File respF = SD_MMC.open(respPath, FILE_WRITE);
+  if (!respF) { client.stop(); return ""; }
 
-  String resp = "";
-  bool inBody = false;
+  uint32_t deadline = millis() + DIARIZE_HTTP_TIMEOUT_MS;
+  while (!client.available() && client.connected() && millis() < deadline) delay(20);
+
+  bool inBody = false, chunked = false;
+  int httpStatus = 0;
+  String headerBuf;
   while (client.available() || (client.connected() && millis() < deadline)) {
     if (!client.available()) { delay(10); continue; }
-    String line = client.readStringUntil('\n');
     if (!inBody) {
-      if (line == "\r" || line == "") inBody = true;
-      if (line.startsWith("HTTP/") && line.indexOf(" 200 ") < 0) {
-        Serial.printf("[Whisper] %s\n", line.c_str());
-        client.stop(); return false;
+      String line = client.readStringUntil('\n');
+      headerBuf += line;
+      if (line.startsWith("HTTP/")) {
+        int sp = line.indexOf(' ');
+        if (sp > 0) httpStatus = line.substring(sp + 1).toInt();
       }
+      String low = line; low.toLowerCase();
+      if (low.startsWith("transfer-encoding:") && low.indexOf("chunked") >= 0) chunked = true;
+      if (line == "\r" || line == "") inBody = true;
     } else {
-      resp += line;
-      if (resp.length() > 131072) break;   // safety bound on body size
+      uint8_t buf[512];
+      int n = client.read(buf, sizeof(buf));
+      if (n > 0) respF.write(buf, n);
     }
   }
   client.stop();
+  respF.close();
 
-  // Robust JSON parse of {"text":"..."} — handles \uXXXX, escapes, and long
-  // transcripts that the old hand-rolled scanner would corrupt or truncate.
-  DynamicJsonDocument doc(resp.length() + 1024);
-  DeserializationError jerr = deserializeJson(doc, resp);
-  if (jerr) { Serial.printf("[Whisper] json: %s\n", jerr.c_str()); return false; }
-  String text = doc["text"] | "";
-  if (text.length() == 0) { Serial.println("[Whisper] empty response"); return false; }
+  if (httpStatus != 200) {
+    Serial.printf("[Diarize] HTTP %d\n", httpStatus);
+    File errF = SD_MMC.open(respPath);
+    if (errF) {
+      String snip;
+      while (errF.available() && snip.length() < 240) snip += (char)errF.read();
+      errF.close();
+      Serial.printf("[Diarize] body: %s\n", snip.c_str());
+    }
+    SD_MMC.remove(respPath);
+    return "";
+  }
+
+  File jf = SD_MMC.open(respPath);
+  if (!jf) return "";
+  String raw;
+  const size_t kMaxJson = 400000;
+  while (jf.available() && raw.length() < kMaxJson) raw += (char)jf.read();
+  jf.close();
+  SD_MMC.remove(respPath);
+
+  String json = raw;
+  if (chunked) {
+    // Inline dechunk (same algorithm as obsidian.cpp).
+    String out; int i = 0, n = raw.length();
+    while (i < n) {
+      int eol = raw.indexOf('\n', i);
+      if (eol < 0) break;
+      String sizeLine = raw.substring(i, eol);
+      int semi = sizeLine.indexOf(';');
+      if (semi >= 0) sizeLine = sizeLine.substring(0, semi);
+      sizeLine.trim();
+      long sz = strtol(sizeLine.c_str(), nullptr, 16);
+      i = eol + 1;
+      if (sz <= 0) break;
+      if (i + sz > n) sz = n - i;
+      out += raw.substring(i, i + (int)sz);
+      i += (int)sz;
+      while (i < n && (raw[i] == '\r' || raw[i] == '\n')) i++;
+    }
+    json = out;
+  }
+
+  String script = diarizedJsonToScript(json, timeOffsetSec);
+  if (!script.length()) Serial.println("[Diarize] empty script");
+  return script;
+}
+
+static bool transcribeOnce(const String& wavPath, int noteNum) {
+  uint32_t pcm = wavPcmBytes(wavPath.c_str());
+  if (pcm == 0) { Serial.println("[Diarize] empty/missing wav"); return false; }
+
+  const uint32_t chunkPcm = (uint32_t)((DIARIZE_CHUNK_MS / 1000.0f) * SAMPLE_RATE * 2);
+  size_t wholeSize = (size_t)pcm + 44;
+  String script;
+
+  if (wholeSize <= DIARIZE_MAX_UPLOAD) {
+    Serial.printf("[Diarize] single shot note_%03d (%u bytes)\n", noteNum, (unsigned)wholeSize);
+    script = diarizeFileOnce(wavPath, 0.0f);
+  } else {
+    Serial.printf("[Diarize] splitting note_%03d (%u pcm bytes)\n", noteNum, (unsigned)pcm);
+    uint32_t offset = 0;
+    int part = 0;
+    while (offset < pcm) {
+      if (WiFi.status() != WL_CONNECTED) return false;
+      uint32_t n = chunkPcm;
+      if (offset + n > pcm) n = pcm - offset;
+
+      char chunkPath[64];
+      snprintf(chunkPath, sizeof(chunkPath), "%s/note_%03d_c%d.wav", NOTES_DIR, noteNum, part);
+      if (!extractWavPcmChunk(wavPath.c_str(), chunkPath, offset, n)) {
+        Serial.printf("[Diarize] chunk extract failed @%u\n", (unsigned)offset);
+        return false;
+      }
+      float tOff = (float)offset / (float)(SAMPLE_RATE * 2);
+      Serial.printf("[Diarize] chunk %d offset=%.1fs bytes=%u\n", part, tOff, (unsigned)(n + 44));
+      String piece = diarizeFileOnce(String(chunkPath), tOff);
+      SD_MMC.remove(chunkPath);
+      if (!piece.length()) {
+        Serial.printf("[Diarize] chunk %d failed\n", part);
+        return false;
+      }
+      if (script.length()) script += "\n\n";
+      script += piece;
+      offset += n;
+      part++;
+    }
+  }
+
+  if (!script.length()) return false;
 
   String tp = wavPath; tp.replace(".wav", ".txt");
   File tf = SD_MMC.open(tp.c_str(), FILE_WRITE);
-  if (tf) { tf.print(text); tf.close(); }
+  if (!tf) return false;
+  tf.print(script);
+  tf.close();
 
   updateIndexHasText(noteNum);
   return true;
@@ -101,33 +349,31 @@ static bool transcribeOnce(const String& wavPath, int noteNum) {
 
 bool transcribe(const String& wavPath, int noteNum) {
   for (int attempt = 0; attempt < 3; attempt++) {
-    if (WiFi.status() != WL_CONNECTED) return false;   // offline: keep note queued, don't burn retries
+    if (WiFi.status() != WL_CONNECTED) return false;
     if (transcribeOnce(wavPath, noteNum)) return true;
-    if (attempt < 2) { Serial.printf("[Whisper] retry %d/2\n", attempt + 1); delay(3000); }
+    if (attempt < 2) { Serial.printf("[Diarize] retry %d/2\n", attempt + 1); delay(3000); }
   }
   return false;
 }
 
-// Offline-first queue: notes with hasText==false are the pending work. This drains
-// them while online; any that fail (no Wi-Fi, API error) simply stay pending and
-// their WAV is preserved for the next sync. Nothing is ever lost on failure.
 void transcribeAll() {
-  if (!cfg::hasOpenAiKey()) { Serial.println("[Whisper] no API key; skipping sync"); return; }
+  if (!cfg::hasOpenAiKey()) { Serial.println("[Diarize] no API key; skipping sync"); return; }
+  speakersLoad();
 
   int pending = 0;
-  for (int i=0; i<(int)noteIndex.size(); i++) if(!noteIndex[i].hasText) pending++;
+  for (int i = 0; i < (int)noteIndex.size(); i++) if (!noteIndex[i].hasText) pending++;
   int done = 0;
-  for (int i=0; i<(int)noteIndex.size(); i++) {
+  for (int i = 0; i < (int)noteIndex.size(); i++) {
     if (noteIndex[i].hasText) continue;
     if (WiFi.status() != WL_CONNECTED) {
-      Serial.printf("[Whisper] wifi lost; %d note(s) stay pending\n", pending - done);
+      Serial.printf("[Diarize] wifi lost; %d note(s) stay pending\n", pending - done);
       break;
     }
     showTranscribing(done, pending);
     char wp[64]; snprintf(wp, sizeof(wp), "%s/note_%03d.wav", NOTES_DIR, noteIndex[i].num);
     if (transcribe(String(wp), noteIndex[i].num)) done++;
   }
-  Serial.printf("[Whisper] synced %d/%d pending\n", done, pending);
+  Serial.printf("[Diarize] synced %d/%d pending\n", done, pending);
 }
 
 // ─── Portal helpers ────────────────────────────────────────────────────────
@@ -210,7 +456,7 @@ void handlePortalRoot() {
                 "<title>Forrest Portal</title>" + portalCss() + "</head><body><div class='wrap'>";
 
   html += "<div class='top'><div><h1>forrest<br>portal</h1>"
-          "<div class='sub'>local note transfer · <a href=\"/tags\" style=\"color:inherit\">tags</a> · <a href=\"/provision\" style=\"color:inherit\">setup</a> · <a href=\"/ota\" style=\"color:inherit\">update</a></div></div>"
+          "<div class='sub'>local note transfer · <a href=\"/tags\" style=\"color:inherit\">tags</a> · <a href=\"/speakers\" style=\"color:inherit\">speakers</a> · <a href=\"/provision\" style=\"color:inherit\">setup</a> · <a href=\"/ota\" style=\"color:inherit\">update</a></div></div>"
           "<div class='pill'>" + String((int)noteIndex.size()) + " notes</div></div>";
 
   html += "<div class='actions' style='margin-bottom:18px'>";
@@ -457,6 +703,143 @@ void handleNoteDelete() {
   transferServer.send(303);
 }
 
+// ─── Speakers library portal ───────────────────────────────────────────────
+
+static File gSpeakerUploadFile;
+static char gSpeakerUploadPath[64];
+static bool gSpeakerUploadOk = false;
+
+void handleSpeakersPage() {
+  speakersLoad();
+  String html = "<!doctype html><html><head><meta charset='utf-8'>"
+                "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+                "<title>Forrest Speakers</title>" + portalCss() +
+                "<style>"
+                ".row{display:flex;justify-content:space-between;align-items:center;gap:12px;border-top:1px solid #ddd;padding:12px 0}"
+                ".row:first-child{border-top:0}"
+                "input{font:inherit;padding:12px;border:1.5px solid #111;border-radius:999px;background:#fff;width:100%;box-sizing:border-box}"
+                "button,.btn{font:inherit;border:1.5px solid #111;border-radius:999px;padding:10px 14px;background:#111;color:#fff;text-decoration:none;white-space:nowrap}"
+                ".danger{background:#fffaf1;color:#111}"
+                ".msg{border:1.5px solid #111;border-radius:18px;padding:12px 14px;background:#fff;margin:12px 0}"
+                ".hint{font-size:13px;color:#666;line-height:1.4}"
+                "form.add{display:flex;flex-direction:column;gap:10px}"
+                "audio{width:100%;margin-top:8px}"
+                "</style></head><body><div class='wrap'>";
+  html += "<h1>forrest<br>speakers</h1>";
+  html += "<a class='btn' href='/'>Back to notes</a>";
+
+  if (transferServer.hasArg("msg")) {
+    String msg = transferServer.arg("msg");
+    html += "<div class='msg'>";
+    if (msg == "added") html += "Speaker saved. Up to 4 refs are sent with each diarize request.";
+    else if (msg == "renamed") html += "Speaker renamed.";
+    else if (msg == "deleted") html += "Speaker deleted.";
+    else if (msg == "full") html += "Speaker library is full.";
+    else if (msg == "bad") html += "Need a name and a short WAV (2–5 seconds, mono preferred).";
+    else html += htmlEscape(msg);
+    html += "</div>";
+  }
+
+  html += "<div class='card'><p class='hint'>Known speakers keep labels stable across long meetings "
+          "(API allows <b>4</b> references per request — first "
+          + String(MAX_KNOWN_SPEAKER_REFS) + " in this list are used). "
+          "Upload a clear 2–5&nbsp;s clip of one person speaking alone.</p>"
+          "<form class='add' action='/speaker/add' method='post' enctype='multipart/form-data'>"
+          "<input name='name' maxlength='31' placeholder='Display name' required>"
+          "<input type='file' name='wav' accept='audio/wav,audio/*' required>"
+          "<button type='submit'>Add speaker</button></form></div>";
+
+  html += "<div class='card'>";
+  if (speakersCount() == 0) {
+    html += "<p class='hint'>No speakers yet.</p>";
+  } else {
+    for (int i = 0; i < speakersCount(); i++) {
+      const Speaker* sp = speakersAt(i);
+      if (!sp) continue;
+      html += "<div class='row'><div><div style='font-size:20px;font-weight:700'>"
+              + htmlEscape(String(sp->name)) + "</div>";
+      html += "<div class='hint'>id " + String(sp->id);
+      if (i < MAX_KNOWN_SPEAKER_REFS) html += " · used for diarize";
+      else html += " · stored (not in top 4)";
+      html += "</div>";
+      String wp = speakersWavPath(sp->id);
+      if (SD_MMC.exists(wp.c_str()))
+        html += "<audio controls src='/speaker/audio?id=" + String(sp->id) + "'></audio>";
+      html += "</div><div style='display:flex;gap:8px;flex-wrap:wrap'>";
+      html += "<form action='/speaker/rename' method='get' style='display:flex;gap:6px'>"
+              "<input type='hidden' name='id' value='" + String(sp->id) + "'>"
+              "<input name='name' maxlength='31' placeholder='Rename' style='width:110px'>"
+              "<button type='submit'>Save</button></form>";
+      html += "<a class='btn danger' href='/speaker/delete?id=" + String(sp->id) + "' "
+              "onclick=\"return confirm('Delete speaker " + htmlEscape(String(sp->name)) + "?')\">Delete</a>";
+      html += "</div></div>";
+    }
+  }
+  html += "</div></div></body></html>";
+  transferServer.send(200, "text/html", html);
+}
+
+void handleSpeakerUpload() {
+  HTTPUpload& up = transferServer.upload();
+  if (up.status == UPLOAD_FILE_START) {
+    gSpeakerUploadOk = false;
+    speakersEnsureDir();
+    snprintf(gSpeakerUploadPath, sizeof(gSpeakerUploadPath), "%s/_upload.wav", SPEAKERS_DIR);
+    if (SD_MMC.exists(gSpeakerUploadPath)) SD_MMC.remove(gSpeakerUploadPath);
+    gSpeakerUploadFile = SD_MMC.open(gSpeakerUploadPath, FILE_WRITE);
+    Serial.printf("[Speakers] upload start %s\n", up.filename.c_str());
+  } else if (up.status == UPLOAD_FILE_WRITE) {
+    if (gSpeakerUploadFile) gSpeakerUploadFile.write(up.buf, up.currentSize);
+  } else if (up.status == UPLOAD_FILE_END) {
+    if (gSpeakerUploadFile) {
+      gSpeakerUploadFile.close();
+      gSpeakerUploadOk = true;
+      Serial.printf("[Speakers] upload end %u bytes\n", (unsigned)up.totalSize);
+    }
+  }
+}
+
+void handleSpeakerAddDone() {
+  String name = transferServer.hasArg("name") ? transferServer.arg("name") : "";
+  name.trim();
+  String loc = "/speakers?msg=bad";
+  if (gSpeakerUploadOk && name.length() > 0) {
+    int id = speakersAdd(name.c_str(), gSpeakerUploadPath);
+    if (id > 0) loc = "/speakers?msg=added";
+    else if (speakersCount() >= MAX_SPEAKERS) loc = "/speakers?msg=full";
+  }
+  if (SD_MMC.exists(gSpeakerUploadPath)) SD_MMC.remove(gSpeakerUploadPath);
+  gSpeakerUploadOk = false;
+  transferServer.sendHeader("Location", loc);
+  transferServer.send(303);
+}
+
+void handleSpeakerRename() {
+  int id = transferServer.hasArg("id") ? transferServer.arg("id").toInt() : 0;
+  String name = transferServer.hasArg("name") ? transferServer.arg("name") : "";
+  if (id > 0 && speakersRename(id, name.c_str()))
+    transferServer.sendHeader("Location", "/speakers?msg=renamed");
+  else
+    transferServer.sendHeader("Location", "/speakers?msg=bad");
+  transferServer.send(303);
+}
+
+void handleSpeakerDelete() {
+  int id = transferServer.hasArg("id") ? transferServer.arg("id").toInt() : 0;
+  if (id > 0) speakersDelete(id);
+  transferServer.sendHeader("Location", "/speakers?msg=deleted");
+  transferServer.send(303);
+}
+
+void handleSpeakerAudio() {
+  int id = transferServer.hasArg("id") ? transferServer.arg("id").toInt() : 0;
+  String path = speakersWavPath(id);
+  File f = SD_MMC.open(path.c_str());
+  if (!f) { transferServer.send(404, "text/plain", "missing"); return; }
+  transferServer.streamFile(f, "audio/wav");
+  f.close();
+}
+
 void handleProvisionPage() {
   Serial.println("[HTTP] GET /provision");
   String html = "<!doctype html><html><head><meta charset='utf-8'>"
@@ -580,6 +963,11 @@ void setupTransferServer() {
   transferServer.on("/tag/add", HTTP_GET, handleTagAdd);
   transferServer.on("/tag/delete", HTTP_GET, handleTagDelete);
   transferServer.on("/note/delete", HTTP_GET, handleNoteDelete);
+  transferServer.on("/speakers", HTTP_GET, handleSpeakersPage);
+  transferServer.on("/speaker/add", HTTP_POST, handleSpeakerAddDone, handleSpeakerUpload);
+  transferServer.on("/speaker/rename", HTTP_GET, handleSpeakerRename);
+  transferServer.on("/speaker/delete", HTTP_GET, handleSpeakerDelete);
+  transferServer.on("/speaker/audio", HTTP_GET, handleSpeakerAudio);
   transferServer.on("/api/notes", HTTP_GET, handlePortalJson);
   transferServer.on("/export.txt", HTTP_GET, handleExportTxt);
   transferServer.on("/txt",   HTTP_GET, [](){ sendFileByNum("txt", "text/plain", true); });

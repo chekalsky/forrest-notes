@@ -150,7 +150,10 @@ static bool enrichNote(const String& transcript, const String& nowLocal,
   if (key.length() == 0 || WiFi.status() != WL_CONNECTED) return false;
 
   String input = transcript;
-  if (input.length() > 6000) input = input.substring(0, 6000);
+  // Prefer head+tail so long meetings keep opening context and the ending action items.
+  if (input.length() > 8000) {
+    input = input.substring(0, 4500) + "\n\n[…middle omitted…]\n\n" + input.substring(input.length() - 3000);
+  }
 
   DynamicJsonDocument reqDoc(9000 + input.length() * 2);
   reqDoc["model"] = "gpt-4o-mini";
@@ -160,16 +163,18 @@ static bool enrichNote(const String& transcript, const String& nowLocal,
   JsonObject sys = msgs.createNestedObject();
   sys["role"] = "system";
   sys["content"] =
-    "You clean up and label a raw voice-note transcript. Reply with ONLY a JSON object, "
-    "no prose, no code fences. Schema: {"
+    "You clean up and label a voice transcript that may include multiple speakers. "
+    "Reply with ONLY a JSON object, no prose, no code fences. Schema: {"
     "\"title\": string (EXACTLY ONE word — the single main topic of the note, a noun in Title Case, no spaces), "
     "\"summary\": string (1 sentence overview), "
-    "\"cleaned\": string (the note rewritten as clear, coherent, succinct markdown in the "
-    "speaker's own voice — first person if the original is. Remove filler words, false "
+    "\"cleaned\": string (the note rewritten as clear, coherent, succinct markdown. "
+    "If the transcript has speaker labels such as **Name** [m:ss] or [Name 00:12], PRESERVE speakers: "
+    "use markdown sections '### Name' (or '### Speaker A') and keep turn order. "
+    "Do NOT invent speakers or reassign lines. Within each turn, remove filler words, false "
     "starts, stutters and repetition; fix grammar and punctuation; keep ALL substantive "
     "details, names, numbers, dates and intent; do NOT add anything that was not said. Use "
-    "short paragraphs, and markdown bullet points only when the note is naturally a list. "
-    "No headings.), "
+    "short paragraphs, and markdown bullet points only when naturally a list. "
+    "No top-level document title heading.), "
     "\"topics\": array of 0-6 strings (proper-noun topics or people mentioned, Title Case, "
     "no # or brackets), "
     "\"event\": object or null. Set it ONLY if the note describes a specific plan, "
