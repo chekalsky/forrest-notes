@@ -68,6 +68,7 @@
 #define TAG_FILE   "/notes/tags.txt"
 #define TOMBS_FILE "/notes/tombs.csv"   // pending vault deletes (uid,tag per line)
 #define MAX_TAGS   20
+#define DEFAULT_NOTE_TAG "undefined"    // provisional tag written when recording starts
 
 /* UI timing */
 #define REC_HOLD_MS         350

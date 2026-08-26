@@ -42,10 +42,19 @@ void saveIndex() {
 }
 
 void addToIndex(int num, const char* tag, bool hasText) {
+  for (int i = 0; i < (int)noteIndex.size(); i++) {
+    if (noteIndex[i].num == num) {
+      strncpy(noteIndex[i].tag, tag, 31);
+      noteIndex[i].tag[31] = '\0';
+      noteIndex[i].hasText = hasText;
+      saveIndex();
+      return;
+    }
+  }
   NoteEntry e;
   e.num = num;
   strncpy(e.tag, tag, 31);
-  e.tag[31]='\0';
+  e.tag[31] = '\0';
   e.hasText = hasText;
   noteIndex.push_back(e);
   saveIndex();
@@ -53,7 +62,7 @@ void addToIndex(int num, const char* tag, bool hasText) {
 
 void updateIndexHasText(int num) {
   const char* foundTag = "";
-  for (int i=0; i<(int)noteIndex.size(); i++) {
+  for (int i = 0; i < (int)noteIndex.size(); i++) {
     if (noteIndex[i].num==num) {
       noteIndex[i].hasText=true;
       foundTag = noteIndex[i].tag;
@@ -134,13 +143,32 @@ int deleteAllNotes(bool alsoVault) {
 
 int nextNoteNumber() {
   int maxNum = 0;
-  for (int i=0; i<(int)noteIndex.size(); i++) if (noteIndex[i].num > maxNum) maxNum = noteIndex[i].num;
+  for (int i = 0; i < (int)noteIndex.size(); i++)
+    if (noteIndex[i].num > maxNum) maxNum = noteIndex[i].num;
+
+  // Also scan the card so orphan WAVs (pre-index era) can't be overwritten.
+  File dir = SD_MMC.open(NOTES_DIR);
+  if (dir && dir.isDirectory()) {
+    for (File e = dir.openNextFile(); e; e = dir.openNextFile()) {
+      String name = e.name();
+      e.close();
+      int slash = name.lastIndexOf('/');
+      String base = slash >= 0 ? name.substring(slash + 1) : name;
+      if (!base.startsWith("note_")) continue;
+      int n = base.substring(5).toInt();   // "note_012.wav" → 12
+      if (n > maxNum) maxNum = n;
+    }
+    dir.close();
+  }
   return maxNum + 1;
 }
 
 void saveTag(int num, const char* tag) {
+  bool hasText = false;
+  for (int i = 0; i < (int)noteIndex.size(); i++)
+    if (noteIndex[i].num == num) { hasText = noteIndex[i].hasText; break; }
   writeNoteMeta(num, tag);
-  addToIndex(num, tag, false);
+  addToIndex(num, tag, hasText);   // upsert — recording already inserted the row
 }
 
 // ─── Tags ─────────────────────────────────────────────────────────────────
@@ -184,7 +212,18 @@ void loadTags() {
     tagCount++;
   }
   f.close();
-  if (tagCount == 0) createDefaultTags();
+  if (tagCount == 0) { createDefaultTags(); return; }
+
+  // Existing devices: ensure the provisional default tag is pickable.
+  bool hasDefault = false;
+  for (int i = 0; i < tagCount; i++)
+    if (strcasecmp(tags[i], DEFAULT_NOTE_TAG) == 0) { hasDefault = true; break; }
+  if (!hasDefault && tagCount < MAX_TAGS) {
+    strncpy(tags[tagCount], DEFAULT_NOTE_TAG, 31);
+    tags[tagCount][31] = 0;
+    tagCount++;
+    saveTagsToFile();
+  }
 }
 
 bool addCustomTag(const char* newTag) {
@@ -226,6 +265,7 @@ void replaceTagOnNotes(const char* oldTag, const char* newTag) {
 bool deleteTag(const char* tagName) {
   if (!tagName) return false;
   if (strcasecmp(tagName, "Untagged") == 0) return false;
+  if (strcasecmp(tagName, DEFAULT_NOTE_TAG) == 0) return false;
 
   bool hadNotes = tagHasNotes(tagName);
   if (hadNotes) {

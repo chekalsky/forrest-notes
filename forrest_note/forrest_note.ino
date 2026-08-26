@@ -48,7 +48,7 @@ extern "C" {
 // All pin, timing, path and threshold constants live in config.h.
 
 // ─── Content arrays ───────────────────────────────────────────────────────
-const char* DEFAULT_TAGS[]    = { "Note", "Work", "Idea", "Buy", "Private", "Meeting" };
+const char* DEFAULT_TAGS[]    = { "undefined", "Note", "Work", "Idea", "Buy", "Private", "Meeting" };
 const char* MENU_ITEMS[]     = { "Notes", "Tags", "Sync", "Settings" };
 const char* SETTINGS_ITEMS[] = { "Sounds", "Transfer", "Device", "Erase All", "Reset" };
 
@@ -126,7 +126,10 @@ void startRecordFlow() {
   showSaved(lastRecNum);
   delay(900);
 
-  tagCursor = min(2, max(tagCount - 1, 0));
+  tagCursor = 0;
+  for (int i = 0; i < tagCount; i++) {
+    if (strcasecmp(tags[i], DEFAULT_NOTE_TAG) == 0) { tagCursor = i; break; }
+  }
   state = STATE_TAG_SELECT;
   showTagSelect(tagCursor);
 }
@@ -154,8 +157,11 @@ void startMeetingRecordFlow() {
   showSaved(lastRecNum);
   delay(900);
 
-  // Default tag cursor toward "meeting" if that tag exists, else same as notes.
-  tagCursor = min(2, max(tagCount - 1, 0));
+  // Prefer Meeting for the confirm picker; fall back to undefined.
+  tagCursor = 0;
+  for (int i = 0; i < tagCount; i++) {
+    if (strcasecmp(tags[i], DEFAULT_NOTE_TAG) == 0) tagCursor = i;
+  }
   for (int i = 0; i < tagCount; i++) {
     if (strcasecmp(tags[i], "meeting") == 0) { tagCursor = i; break; }
   }

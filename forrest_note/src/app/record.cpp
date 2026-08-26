@@ -86,9 +86,20 @@ bool record(bool holdMode) {
   f.flush();
   f.seek(44);
 
+  // Register in the index immediately so a crash / skipped tag confirm still
+  // leaves a discoverable note (provisional tag = DEFAULT_NOTE_TAG).
+  writeNoteMeta(num, DEFAULT_NOTE_TAG);
+  addToIndex(num, DEFAULT_NOTE_TAG, false);
+  lastRecNum = num;
+
   RecCtx ctx;
   ctx.ring = xRingbufferCreateWithCaps(REC_RING_LEN, RINGBUF_TYPE_BYTEBUF, MALLOC_CAP_SPIRAM);
-  if (!ctx.ring) { f.close(); return false; }
+  if (!ctx.ring) {
+    f.close();
+    deleteNote(num);
+    lastRecNum = -1;
+    return false;
+  }
   ctx.running  = true;
   ctx.finished = false;
 
@@ -96,6 +107,8 @@ bool record(bool holdMode) {
   if (xTaskCreatePinnedToCore(recProducerTask, "recprod", 4096, &ctx, 6, &producer, 0) != pdPASS) {
     vRingbufferDeleteWithCaps(ctx.ring);
     f.close();
+    deleteNote(num);
+    lastRecNum = -1;
     return false;
   }
 
@@ -180,10 +193,18 @@ bool record(bool holdMode) {
   checkpointWav(f, totalMono);
   f.close();
 
+  if (totalMono <= 1000) {
+    // Too short to keep — drop the provisional index row + files.
+    deleteNote(num);
+    lastRecNum = -1;
+    Serial.println("[Rec] discarded (too short)");
+    return false;
+  }
+
   lastRecNum = num;
   Serial.printf("[Rec] done: %lu bytes%s\n",
                 (unsigned long)totalMono, writeOk ? "" : " (truncated SD error)");
-  return totalMono > 1000;
+  return true;
 }
 
 bool playWavFile(const char* path) {
