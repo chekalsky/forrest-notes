@@ -146,7 +146,13 @@ arduino-cli core install esp32:esp32@3.2.0
 arduino-cli lib install "Adafruit GFX Library" "ArduinoJson"
 ```
 
-**3. Compile** (run from the repo root):
+**3. Compile** (validates the firmware without flashing):
+
+```bash
+./scripts/compile.sh
+```
+
+You should see something like `Sketch uses ~1.43 MB (8%) of program storage space.` That is the pre-flash gate — if it fails, do not upload. Same command as:
 
 ```bash
 arduino-cli compile \
@@ -154,7 +160,7 @@ arduino-cli compile \
   ./forrest_note
 ```
 
-You should see something like `Sketch uses ~1.43 MB (8%) of program storage space.`
+Pushes and pull requests also run this compile on GitHub Actions.
 
 **4. Flash it.** ⚠️ **Flashing quirk:** this board powers its USB port down ~1 second after plug-in unless it's parked in the ROM bootloader. So:
 
@@ -254,6 +260,8 @@ Diarization still separates speakers, but labels are generic (`A`, `B`, …) and
 ---
 
 ## 🤖 How the AI pipeline works
+
+Firmware control flow (boot, UI states, record, sync, portal) is in [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 On sync, for each new note the firmware:
 

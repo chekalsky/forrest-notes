@@ -1,6 +1,10 @@
 #pragma once
 #include <Arduino.h>
 
+// SD-card note store: index.csv, tags.txt, per-note wav/txt/meta, vault tombstones.
+// Callers: record (create), ui (list/detail), transcribe (hasText), obsidian (uid/meta),
+// portal (CRUD). Ticker *drawing* lives in ui.cpp; this module only supplies noteTickerText().
+
 void   loadIndex();
 void   saveIndex();
 void   addToIndex(int num, const char* tag, bool hasText);
@@ -38,8 +42,6 @@ String currentUtcIso();
 
 String notePreviewText(int num, size_t maxLen = 90);
 String noteTickerText(int idx);
-bool   activeTickerNeedsScroll(int cursor);
-void   drawTickerText(int x, int y, int maxW, const String& rawText, bool active, uint8_t color);
 
 int  filteredCount();
 int  noteAtFilteredIndex(int visIdx);

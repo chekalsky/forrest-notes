@@ -6,6 +6,9 @@
 #include "src/power/board_power_bsp.h"
 #include "src/display/epaper_driver_bsp.h"
 
+// Shared mutable app state. Defined in forrest_note.ino. Prefer passing
+// arguments in new code; these exist because the Arduino sketch is one image.
+
 extern std::vector<NoteEntry> noteIndex;
 
 extern AppState  state;

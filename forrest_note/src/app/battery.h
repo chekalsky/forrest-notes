@@ -1,5 +1,7 @@
 #pragma once
 
+// Battery ADC + idle-screen ring. Callers: app_fsm (low-batt warn) and ui (idle).
+
 void  batteryInit();
 float readBatteryVoltage();
 int   batteryPercentFromVoltage(float v);

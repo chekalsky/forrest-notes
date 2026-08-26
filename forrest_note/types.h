@@ -1,6 +1,10 @@
 #pragma once
 #include <vector>
 
+// AppState is the e-paper UI. Sync is NOT a state (startSyncFlow blocks in MENU).
+// Sleep is MCU deep-sleep, not a state. STATE_SAVED is a flash between record and
+// tag-select. STATE_ERROR is unused. See ARCHITECTURE.md "UI state machine".
+
 typedef enum {
   STATE_IDLE,
   STATE_RECORDING,

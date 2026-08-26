@@ -3,6 +3,9 @@
 #include <pgmspace.h>
 #include "../display/epaper_driver_bsp.h"
 
+// Pixel primitives, fonts, and e-paper refresh (sync / async / coalesced dirty).
+// Callers: ui.cpp screens. Do not call EPD_* from app code except through here.
+
 // Screen dimensions and color aliases — shared by all drawing and UI code.
 #define W     200
 #define H     200

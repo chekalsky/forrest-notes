@@ -3,10 +3,8 @@
 #include "../../globals.h"
 #include "../../types.h"
 #include "buttons.h"
-
-extern void startRecordFlow();
-extern void startMeetingRecordFlow();
-extern void resetActivity();
+#include "flows.h"
+#include "sleep.h"
 
 bool isDown(int pin) { return digitalRead(pin) == LOW; }
 

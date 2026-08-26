@@ -6,6 +6,7 @@
 // offline-first transcription queue: only notes with a transcript that haven't been
 // pushed yet are sent; failures stay pending and retry next sync. Safe no-op unless
 // cfg::hasGithub(). Call after transcribeAll() while Wi-Fi is connected.
+// Control flow: see ARCHITECTURE.md "Sync pipeline".
 void obsidianSyncAll();
 
 // Drain the pending-delete queue (/notes/tombs.csv): remove each note's .md from

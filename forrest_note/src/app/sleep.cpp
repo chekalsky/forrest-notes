@@ -4,7 +4,7 @@
 #include "../../types.h"
 #include "sleep.h"
 #include "ui.h"
-#include "network.h"
+#include "portal.h"
 #include "../../sounds.h"
 #include "WiFi.h"
 

@@ -1,6 +1,10 @@
 #pragma once
 #include <Arduino.h>
 
+// E-paper screens, icons, and coalesced redraw. One module on purpose (screens
+// share layout helpers). Callers: flows, app_fsm, transcribe/obsidian progress.
+// Control flow: see ARCHITECTURE.md "UI state machine".
+
 // Icons
 void iconMicWhite(int cx, int cy);
 void iconRecordBig(int cx, int cy);
@@ -31,6 +35,8 @@ void drawMinimalCloudIcon(int cx, int cy, uint8_t color);
 void drawMenuTile(int x, int y, int w, int h, const char* label, int icon, bool active);
 void drawNoteCard(int y, int idx, bool active);
 void drawListMenuCard(int y, const char* title, const char* meta, bool active);
+bool activeTickerNeedsScroll(int cursor);
+void drawTickerText(int x, int y, int maxW, const String& rawText, bool active, uint8_t color);
 
 // Screens
 void showIdle();

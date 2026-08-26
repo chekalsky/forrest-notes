@@ -2,6 +2,9 @@
 #include <Arduino.h>
 #include "SD_MMC.h"
 
+// 16 kHz mono 16-bit PCM WAV helpers. Used by record (header + crash-safe flush),
+// transcribe (chunk long meetings), and speakers (truncate refs to 2–5 s).
+
 // Write a standard 16 kHz mono 16-bit PCM WAV header at offset 0.
 bool writePcmWavHeader(File& f, uint32_t dataBytes);
 

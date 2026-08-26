@@ -6,6 +6,7 @@
 #include "config_store.h"
 #include "notes.h"
 #include "ui.h"
+#include "https.h"
 #include "WiFi.h"
 #include "WiFiClientSecure.h"
 #include "SD_MMC.h"
@@ -13,42 +14,14 @@
 #include <vector>
 #include "mbedtls/base64.h"
 
-// Same Mozilla CA root bundle used by network.cpp (resolves to the same symbols).
-extern const uint8_t x509_crt_bundle_start[] asm("_binary_x509_crt_bundle_start");
-extern const uint8_t x509_crt_bundle_end[]   asm("_binary_x509_crt_bundle_end");
-
 enum GhResult { GH_OK, GH_AUTH, GH_RATELIMIT, GH_NET, GH_OTHER };
-
-// Decode an HTTP/1.1 chunked-transfer body: repeated "<hexsize>\r\n<data>\r\n"
-// until a zero-size chunk. OpenAI's chat endpoint replies chunked (GitHub doesn't),
-// and without this the raw body keeps its chunk markers and fails to JSON-parse.
-static String dechunkBody(const String& in) {
-  String out; int i = 0, n = in.length();
-  while (i < n) {
-    int eol = in.indexOf('\n', i);
-    if (eol < 0) break;
-    String sizeLine = in.substring(i, eol);
-    int semi = sizeLine.indexOf(';');                 // ignore chunk extensions
-    if (semi >= 0) sizeLine = sizeLine.substring(0, semi);
-    sizeLine.trim();
-    long sz = strtol(sizeLine.c_str(), nullptr, 16);
-    i = eol + 1;
-    if (sz <= 0) break;                               // terminating 0-chunk
-    if (i + sz > n) sz = n - i;                        // guard against truncation
-    out += in.substring(i, i + sz);
-    i += sz;
-    while (i < n && (in[i] == '\r' || in[i] == '\n')) i++;  // skip CRLF after data
-  }
-  return out;
-}
 
 // ── Generic HTTPS request (reuses the transcribeOnce pattern) ───────────────
 static bool httpsSend(const char* host, const String& method, const String& path,
                       const std::vector<String>& headers, const String& body,
                       int& outStatus, String& outBody) {
   WiFiClientSecure client;
-  client.setCACertBundle(x509_crt_bundle_start,
-                         (size_t)(x509_crt_bundle_end - x509_crt_bundle_start));
+  httpsAttachCa(client);
   client.setHandshakeTimeout(15);
   if (!client.connect(host, 443, 15000)) return false;
 

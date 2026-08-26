@@ -1,6 +1,9 @@
 #pragma once
 #include <time.h>
 
+// PCF85063 RTC + NTP. rtcSync* keep the chip and ESP system clock aligned.
+// syncTimeFromNTP() requires STA Wi-Fi. Callers: flows (sync/transfer), notes (timestamps).
+
 #define PCF85063_REG_SECONDS  0x04
 #define PCF85063_REG_MINUTES  0x05
 #define PCF85063_REG_HOURS    0x06

@@ -1,6 +1,10 @@
 #pragma once
 #include <Arduino.h>
 
+// On-device speaker library (WAV clips on SD). First MAX_KNOWN_SPEAKER_REFS
+// names are attached to each diarize request so meeting labels stay stable.
+// Callers: portal (CRUD) and transcribe (speakersPickForDiarize).
+
 struct Speaker {
   int  id;
   char name[32];

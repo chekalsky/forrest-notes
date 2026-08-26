@@ -463,35 +463,6 @@ String noteTickerText(int idx) {
   return normalizeForDisplay(ticker);
 }
 
-bool activeTickerNeedsScroll(int cursor) {
-  int count = filteredCount();
-  if (count <= 0) return false;
-  int idx = noteAtFilteredIndex(cursor);
-  if (idx < 0) return false;
-  String ticker = noteTickerText(idx);
-  return textW(ticker.c_str(), 1) > 145;
-}
-
-void drawTickerText(int x, int y, int maxW, const String& rawText, bool active, uint8_t color) {
-  String text = normalizeForDisplay(rawText);
-  if (textW(text.c_str(), 1) <= maxW || !active) {
-    drawStrFit(x, y, maxW, text.c_str(), 1, color);
-    return;
-  }
-  String spacer = "     ";
-  String loopText = text + spacer + text;
-  int cycleLen = text.length() + spacer.length();
-  int start = tickerOffset % max(1, cycleLen);
-  String window = "";
-  for (int i = start; i < (int)loopText.length(); i++) {
-    String candidate = window + loopText[i];
-    if (textW(candidate.c_str(), 1) > maxW) break;
-    window = candidate;
-  }
-  if (window.length() == 0) drawStrFit(x, y, maxW, text.c_str(), 1, color);
-  else                      drawStr(x, y, window.c_str(), 1, color);
-}
-
 // ─── Filtering ────────────────────────────────────────────────────────────
 
 int filteredCount() {

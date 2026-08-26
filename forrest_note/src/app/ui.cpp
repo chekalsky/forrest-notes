@@ -227,6 +227,35 @@ void drawMenuTile(int x, int y, int w, int h, const char* label, int icon, bool 
   drawStrInBox(x + 4, y + 29, w - 8, 18, label, 1, col);
 }
 
+bool activeTickerNeedsScroll(int cursor) {
+  int count = filteredCount();
+  if (count <= 0) return false;
+  int idx = noteAtFilteredIndex(cursor);
+  if (idx < 0) return false;
+  String ticker = noteTickerText(idx);
+  return textW(ticker.c_str(), 1) > 145;
+}
+
+void drawTickerText(int x, int y, int maxW, const String& rawText, bool active, uint8_t color) {
+  String text = normalizeForDisplay(rawText);
+  if (textW(text.c_str(), 1) <= maxW || !active) {
+    drawStrFit(x, y, maxW, text.c_str(), 1, color);
+    return;
+  }
+  String spacer = "     ";
+  String loopText = text + spacer + text;
+  int cycleLen = text.length() + spacer.length();
+  int start = tickerOffset % max(1, cycleLen);
+  String window = "";
+  for (int i = start; i < (int)loopText.length(); i++) {
+    String candidate = window + loopText[i];
+    if (textW(candidate.c_str(), 1) > maxW) break;
+    window = candidate;
+  }
+  if (window.length() == 0) drawStrFit(x, y, maxW, text.c_str(), 1, color);
+  else                      drawStr(x, y, window.c_str(), 1, color);
+}
+
 void drawNoteCard(int y, int idx, bool active) {
   const int x = 16, w = 168, h = 39;
   if (active) fillRoundRect(x, y, w, h, 8, BLACK);

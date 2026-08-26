@@ -1,6 +1,8 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
+// Pins, paths, and timing thresholds. Application logic must not hard-code these.
+
 #define EPD_SPI_NUM        SPI2_HOST
 #define ESP32_I2C_DEV_NUM  I2C_NUM_0
 
