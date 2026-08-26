@@ -48,7 +48,7 @@ extern "C" {
 // All pin, timing, path and threshold constants live in config.h.
 
 // ─── Content arrays ───────────────────────────────────────────────────────
-const char* DEFAULT_TAGS[]    = { "Note", "Work", "Idea", "Buy", "Private" };
+const char* DEFAULT_TAGS[]    = { "Note", "Work", "Idea", "Buy", "Private", "Meeting" };
 const char* MENU_ITEMS[]     = { "Notes", "Tags", "Sync", "Settings" };
 const char* SETTINGS_ITEMS[] = { "Sounds", "Transfer", "Device", "Erase All", "Reset" };
 
@@ -109,7 +109,7 @@ void startRecordFlow() {
   showRecording();
 
   palaSoundSetEnabled(false);
-  bool recOk = record();
+  bool recOk = record(true);
   palaSoundSetEnabled(true);
 
   if (!recOk) {
@@ -127,6 +127,38 @@ void startRecordFlow() {
   delay(900);
 
   tagCursor = min(2, max(tagCount - 1, 0));
+  state = STATE_TAG_SELECT;
+  showTagSelect(tagCursor);
+}
+
+void startMeetingRecordFlow() {
+  state = STATE_RECORDING;
+  showMeetingRecording();
+  soundSelect();
+
+  palaSoundSetEnabled(false);
+  bool recOk = record(false);
+  palaSoundSetEnabled(true);
+
+  if (!recOk) {
+    showError("REC FAIL");
+    delay(1600);
+    state = STATE_IDLE;
+    showIdle();
+    return;
+  }
+
+  soundSaved();
+
+  state = STATE_SAVED;
+  showSaved(lastRecNum);
+  delay(900);
+
+  // Default tag cursor toward "meeting" if that tag exists, else same as notes.
+  tagCursor = min(2, max(tagCount - 1, 0));
+  for (int i = 0; i < tagCount; i++) {
+    if (strcasecmp(tags[i], "meeting") == 0) { tagCursor = i; break; }
+  }
   state = STATE_TAG_SELECT;
   showTagSelect(tagCursor);
 }

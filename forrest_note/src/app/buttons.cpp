@@ -5,6 +5,7 @@
 #include "buttons.h"
 
 extern void startRecordFlow();
+extern void startMeetingRecordFlow();
 extern void resetActivity();
 
 bool isDown(int pin) { return digitalRead(pin) == LOW; }
@@ -57,18 +58,49 @@ ButtonEvent readButtonEvent(int pin) {
   return EV_NONE;
 }
 
-// Non-blocking hold-to-record in IDLE: tracks the press across loop iterations and
-// fires startRecordFlow() once the hold reaches REC_HOLD_MS.
+// IDLE record gestures:
+//   hold  ≥ REC_HOLD_MS  → short note (release to stop)
+//   3× tap within REC_TRIPLE_GAP_MS of each other → meeting (3× again to stop)
 bool handleIdleRec() {
   static bool tracking = false;
   static uint32_t t0 = 0;
+  static bool wasDown = false;
+  static int taps = 0;
+  static uint32_t lastTapMs = 0;
 
-  if (!isDown(BTN_REC)) { tracking = false; return false; }
-
+  bool down = isDown(BTN_REC);
   uint32_t now = millis();
-  if (!tracking) { tracking = true; t0 = now; resetActivity(); return true; }
+
+  if (taps > 0 && now - lastTapMs > REC_TRIPLE_GAP_MS) taps = 0;
+
+  if (down && !wasDown) {
+    tracking = true;
+    t0 = now;
+    resetActivity();
+  }
+
+  if (!down && wasDown && tracking) {
+    uint32_t held = now - t0;
+    tracking = false;
+    if (held >= BTN_DEBOUNCE_MS && held < REC_HOLD_MS) {
+      taps++;
+      lastTapMs = now;
+      Serial.printf("[Rec] start tap %d/3\n", taps);
+      if (taps >= 3) {
+        taps = 0;
+        wasDown = down;
+        startMeetingRecordFlow();
+        return true;
+      }
+    }
+  }
+  wasDown = down;
+
+  if (!down) return taps > 0;   // stay awake while a triple is in progress
+
   if (now - t0 >= REC_HOLD_MS) {
     tracking = false;
+    taps = 0;
     startRecordFlow();
   }
   return true;   // consume the press while it's held

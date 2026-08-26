@@ -46,15 +46,45 @@ static void recProducerTask(void* arg) {
   vTaskDelete(NULL);
 }
 
-bool record() {
+// Write a playable PCM WAV header for the bytes captured so far. Callers must
+// seek back to the data append position afterward if still recording.
+static void writeWavHeader(File& f, uint32_t dataBytes) {
+  uint32_t dB = dataBytes, fS = dB + 36, bR = SAMPLE_RATE * 2;
+  uint16_t bA = 2, aF = 1, ch = 1, bps = 16;
+  uint32_t fL = 16, sr = SAMPLE_RATE;
+  f.seek(0);
+  f.write((uint8_t*)"RIFF", 4); f.write((uint8_t*)&fS, 4);
+  f.write((uint8_t*)"WAVE", 4); f.write((uint8_t*)"fmt ", 4);
+  f.write((uint8_t*)&fL, 4);   f.write((uint8_t*)&aF, 2);
+  f.write((uint8_t*)&ch, 2);   f.write((uint8_t*)&sr, 4);
+  f.write((uint8_t*)&bR, 4);   f.write((uint8_t*)&bA, 2);
+  f.write((uint8_t*)&bps, 2);
+  f.write((uint8_t*)"data", 4); f.write((uint8_t*)&dB, 4);
+}
+
+// Push header sizes + FatFS buffers to the card so a power loss still leaves
+// a playable (truncated) WAV. Returns the byte offset where PCM continues.
+static uint32_t checkpointWav(File& f, uint32_t dataBytes) {
+  uint32_t dataPos = 44UL + dataBytes;
+  f.flush();
+  writeWavHeader(f, dataBytes);
+  f.flush();
+  f.seek(dataPos);
+  return dataPos;
+}
+
+bool record(bool holdMode) {
   int num = nextNoteNumber();
   char path[64]; snprintf(path, sizeof(path), "%s/note_%03d.wav", NOTES_DIR, num);
-  Serial.printf("[Rec] %s\n", path);
+  Serial.printf("[Rec] %s mode=%s\n", path, holdMode ? "hold" : "meeting");
 
   File f = SD_MMC.open(path, FILE_WRITE);
   if (!f) return false;
 
-  uint8_t header[44]={}; f.write(header, 44);
+  // Valid header from the first byte — empty data chunk until the first checkpoint.
+  writeWavHeader(f, 0);
+  f.flush();
+  f.seek(44);
 
   RecCtx ctx;
   ctx.ring = xRingbufferCreateWithCaps(REC_RING_LEN, RINGBUF_TYPE_BYTEBUF, MALLOC_CAP_SPIRAM);
@@ -71,6 +101,15 @@ bool record() {
 
   uint32_t totalMono = 0, t0 = millis();
   int      recPeak = 0;   // peak |sample| since the last UI update
+  const uint32_t maxMs = holdMode ? MAX_REC_MS : MAX_MEETING_MS;
+
+  // Meeting stop: count three short REC taps (same gesture as start).
+  int      stopTaps = 0;
+  uint32_t lastTapMs = 0;
+  bool     wasDown = (digitalRead(BTN_REC) == LOW);
+  uint32_t pressStart = wasDown ? millis() : 0;
+  uint32_t lastFlush = millis();
+  bool     writeOk = true;
 
   auto drain = [&](TickType_t wait) -> bool {
     size_t got = 0;
@@ -82,23 +121,51 @@ bool record() {
     size_t written = f.write((uint8_t*)item, got);
     vRingbufferReturnItem(ctx.ring, item);
     totalMono += written;
+    if (written != got) {
+      writeOk = false;
+      Serial.printf("[Rec] SD write short %u/%u\n", (unsigned)written, (unsigned)got);
+    }
     return true;
   };
 
-  // Record while held (min 500 ms), up to the hard duration cap. Drive the live
-  // timer + level meter as fast as the panel will take it (~10x/sec); the partial
-  // refresh is non-blocking and showRecordingLive() drops frames while it paints,
-  // so a tight cadence just means the meter tracks the latest peak instead of lagging.
+  // Hold mode: record while held (min 500 ms). Meeting mode: until 3× tap or cap.
+  // UI is e-ink gated inside showRecordingLive(); poll peak ~4 Hz so we don't
+  // burn cycles redrawing a panel that only accepts ~1 Hz meaningful changes.
   uint32_t lastUi = 0;
-  while ((digitalRead(BTN_REC) == LOW || millis() - t0 < 500) &&
-         (millis() - t0 < MAX_REC_MS)) {
+  bool stop = false;
+  while (!stop && writeOk && (millis() - t0 < maxMs)) {
     drain(pdMS_TO_TICKS(40));
+
+    if (holdMode) {
+      if (!(digitalRead(BTN_REC) == LOW || millis() - t0 < 500)) stop = true;
+    } else {
+      bool down = (digitalRead(BTN_REC) == LOW);
+      uint32_t now = millis();
+      if (down && !wasDown) {
+        pressStart = now;
+      } else if (!down && wasDown) {
+        uint32_t held = now - pressStart;
+        if (held >= BTN_DEBOUNCE_MS && held < BTN_LONG_MS) {
+          if (stopTaps > 0 && now - lastTapMs > REC_TRIPLE_GAP_MS) stopTaps = 0;
+          stopTaps++;
+          lastTapMs = now;
+          Serial.printf("[Rec] meeting stop tap %d/3\n", stopTaps);
+          if (stopTaps >= 3) stop = true;
+        }
+      }
+      wasDown = down;
+    }
+
     uint32_t now = millis();
-    if (now - lastUi >= 100) {
+    if (now - lastFlush >= REC_FLUSH_MS) {
+      lastFlush = now;
+      checkpointWav(f, totalMono);
+    }
+    if (now - lastUi >= 200) {
       lastUi = now;
       int lvl = (int)((long)recPeak * 152L * 3L / 32767L);   // ×3 boost for speech
       if (lvl > 152) lvl = 152;
-      showRecordingLive(now - t0, lvl);
+      showRecordingLive(now - t0, lvl, !holdMode);
       recPeak = 0;
     }
   }
@@ -110,20 +177,12 @@ bool record() {
 
   vRingbufferDeleteWithCaps(ctx.ring);
 
-  f.seek(0);
-  uint32_t dB=totalMono, fS=dB+36, bR=SAMPLE_RATE*2;
-  uint16_t bA=2,aF=1,ch=1,bps=16; uint32_t fL=16,sr=SAMPLE_RATE;
-  f.write((uint8_t*)"RIFF",4); f.write((uint8_t*)&fS,4);
-  f.write((uint8_t*)"WAVE",4); f.write((uint8_t*)"fmt ",4);
-  f.write((uint8_t*)&fL,4);   f.write((uint8_t*)&aF,2);
-  f.write((uint8_t*)&ch,2);   f.write((uint8_t*)&sr,4);
-  f.write((uint8_t*)&bR,4);   f.write((uint8_t*)&bA,2);
-  f.write((uint8_t*)&bps,2);
-  f.write((uint8_t*)"data",4); f.write((uint8_t*)&dB,4);
+  checkpointWav(f, totalMono);
   f.close();
 
   lastRecNum = num;
-  Serial.printf("[Rec] done: %lu bytes\n", (unsigned long)totalMono);
+  Serial.printf("[Rec] done: %lu bytes%s\n",
+                (unsigned long)totalMono, writeOk ? "" : " (truncated SD error)");
   return totalMono > 1000;
 }
 

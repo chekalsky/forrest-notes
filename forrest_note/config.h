@@ -55,7 +55,9 @@
 /* Audio */
 #define SAMPLE_RATE  16000
 #define REC_BUF      (8 * 1024)
-#define MAX_REC_MS   (5UL * 60UL * 1000UL)   // hard cap on a single recording (5 min)
+#define MAX_REC_MS       (5UL * 60UL * 1000UL)            // hold-to-talk note cap (5 min)
+#define MAX_MEETING_MS   (2UL * 60UL * 60UL * 1000UL)     // hands-free meeting cap (2 h)
+#define REC_FLUSH_MS     2000UL                          // crash-safe: sync WAV + header to SD
 #define REC_RING_LEN (96 * 1024)             // PSRAM ring to absorb SD write stalls
 #define MIC_GAIN_DB  45.0f                   // ES7210 input gain
 #define SPK_VOL_MAX  100.0f                  // ES8311 output volume ceiling
@@ -69,6 +71,7 @@
 
 /* UI timing */
 #define REC_HOLD_MS         350
+#define REC_TRIPLE_GAP_MS   700     // max gap between taps for a 3× meeting start/stop
 #define BTN_LONG_MS         450     // hold threshold for "back"/secondary (lower = snappier)
 #define BTN_DEBOUNCE_MS     12      // press must persist this long to count
 #define LOOP_DELAY_MS       4       // main-loop poll period (was 15; lower = more responsive)

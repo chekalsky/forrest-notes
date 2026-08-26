@@ -288,35 +288,88 @@ void showBatteryLow(int pct) {
   refresh();
 }
 
-static float recCircleR = 24.0f;   // smoothed radius, carried across frames
+// ─── Recording screen ──────────────────────────────────────────────────────
+// Composition: one level-driven circle in the center (the expressive bit) + a
+// small blinking REC lamp in the corner (proof of life when the room is quiet).
+ // E-ink: paint only when radius, blink phase, or meeting-timer second changes.
 
-static void drawRecordingScreen(uint32_t elapsedMs, int level) {
-  (void)elapsedMs;
-  // Original look: a solid black screen with one centered white circle...
-  fillRect(0, 0, W, H, BLACK);
-  // ...that pulses with the live mic level (level is 0..152 from record.cpp):
-  // quiet ≈ r24, loud ≈ r68.
-  float target = 24.0f + (float)level * 44.0f / 152.0f;
-  if (target < 24.0f) target = 24.0f;
-  if (target > 68.0f) target = 68.0f;
-  // Ease toward the target instead of snapping: snap up fast, fall back slowly
-  // for a natural "breathing" pulse rather than a jittery jump each frame.
-  float a = (target > recCircleR) ? 0.55f : 0.18f;
-  recCircleR += (target - recCircleR) * a;
-  fillCircle(W / 2, H / 2, (int)(recCircleR + 0.5f), WHITE);
+static int  recDrawnR        = -1;
+static int  recLastSec       = -1;
+static int  recLevelSmoothed = 0;
+static bool recBlinkOn       = true;
+
+static void followRecLevel(int level) {
+  // Fast attack, slower release — feels responsive without twitching.
+  int delta = level - recLevelSmoothed;
+  if (delta > 0) recLevelSmoothed += (delta + 1) / 2;
+  else           recLevelSmoothed += delta / 5;
 }
 
-void showRecording() {                         // initial frame (synchronous)
-  recCircleR = 24.0f;                           // start from the resting size
-  drawRecordingScreen(0, 0);
+static int levelRadius() {
+  float n = (float)recLevelSmoothed / 152.0f;
+  if (n < 0) n = 0;
+  if (n > 1) n = 1;
+  // Ease-in so quiet speech still moves a little; loud fills the field.
+  n = n * n * (3.0f - 2.0f * n);
+  int r = 22 + (int)(n * 40.0f + 0.5f);   // 22 quiet → 62 loud
+  if (r < 20) r = 20;
+  if (r > 64) r = 64;
+  return r;
+}
+
+static void drawRecordingScreen(uint32_t elapsedMs, int radius, bool meeting, bool blinkOn) {
+  fillRect(0, 0, W, H, BLACK);
+
+  // Level disk on a solid black field — no guide ring so the black stays dominant.
+  fillCircle(W / 2, H / 2, radius, WHITE);
+  recDrawnR = radius;
+
+  // Corner REC lamp: filled = on, ring = off. Binary = e-ink friendly.
+  recBlinkOn = blinkOn;
+  if (blinkOn) fillCircle(178, 22, 7, WHITE);
+  else         strokeCircle(178, 22, 7, 2, WHITE);
+
+  if (meeting) {
+    uint32_t sec = elapsedMs / 1000UL;
+    recLastSec = (int)sec;
+    char tbuf[16];
+    snprintf(tbuf, sizeof(tbuf), "%lu:%02lu",
+             (unsigned long)(sec / 60UL), (unsigned long)(sec % 60UL));
+    drawStrC(100, 16, "meeting", 1, WHITE);
+    drawStrC(100, 178, tbuf, 1, WHITE);
+  }
+}
+
+void showRecording() {
+  recDrawnR = -1;
+  recLastSec = -1;
+  recLevelSmoothed = 0;
+  recBlinkOn = true;
+  drawRecordingScreen(0, levelRadius(), false, true);
   refresh();
 }
 
-// Periodic, non-blocking update during recording — keeps audio capture / SD
-// writes flowing while the panel repaints in the background.
-void showRecordingLive(uint32_t elapsedMs, int level) {
-  if (displayBusy()) return;                   // skip a frame if the panel is still painting
-  drawRecordingScreen(elapsedMs, level);
+void showMeetingRecording() {
+  recDrawnR = -1;
+  recLastSec = -1;
+  recLevelSmoothed = 0;
+  recBlinkOn = true;
+  drawRecordingScreen(0, levelRadius(), true, true);
+  refresh();
+}
+
+void showRecordingLive(uint32_t elapsedMs, int level, bool meeting) {
+  if (displayBusy()) return;
+
+  followRecLevel(level);
+  int r = levelRadius();
+  bool blink = ((elapsedMs / 850UL) & 1UL) == 0UL;
+  int sec = (int)(elapsedMs / 1000UL);
+
+  if (r == recDrawnR && blink == recBlinkOn && (!meeting || sec == recLastSec))
+    return;
+
+  drawRecordingScreen(elapsedMs, r, meeting, blink);
   display->EPD_DisplayPartTrigger();
 }
 
