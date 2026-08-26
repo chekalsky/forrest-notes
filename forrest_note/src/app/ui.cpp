@@ -1,4 +1,5 @@
 #include "Arduino.h"
+#include <math.h>
 #include "../../config.h"
 #include "../../globals.h"
 #include "../../types.h"
@@ -7,6 +8,7 @@
 #include "notes.h"
 #include "battery.h"
 #include "rtc.h"
+#include "config_store.h"
 #include "../../logo_bitmap.h"
 #include "../../sounds.h"
 #include "SD_MMC.h"
@@ -524,51 +526,166 @@ void showDeleteConfirm(int noteNum) {
   refresh();
 }
 
-void showObsidianSync(int done, int total) {
-  clearWhite();
-  drawKicker("vault", 20);
-  iconSync(100, 76);
-  int barW = 144, barH = 10, barX = 28, barY = 116;
-  strokeRoundRect(barX, barY, barW, barH, 5, 1, BLACK);
-  if (total > 0) {
-    int fill = (done * (barW - 4)) / max(total, 1);
-    if (fill > 0) fillRoundRect(barX+2, barY+2, fill, barH-4, 3, BLACK);
-    char b[20]; snprintf(b, sizeof(b), "%d / %d", done, total);
-    drawStrC(100, 142, b, 1, BLACK);
-  } else {
-    drawStrC(100, 142, "please wait", 1, BLACK);
+static const int SYNC_PIZZA_SLICES = 8;
+static const uint32_t SYNC_PULSE_MS = 5000;
+
+struct SyncUiState {
+  char phase[16];
+  char note[36];
+  char chunk[36];
+  char process[36];
+  int percent;
+  int done;
+  int total;
+  int frame;
+  uint32_t lastDrawMs;
+  bool active;
+};
+static SyncUiState gSync = {};
+
+static void drawPizzaLoader(int cx, int cy, int r, int frame) {
+  const int n = SYNC_PIZZA_SLICES;
+  int lit = ((frame % n) + n) % n;
+  strokeCircle(cx, cy, r, 2, BLACK);
+  // Slice dividers (pizza cuts).
+  for (int s = 0; s < n; s++) {
+    float a = (float)s * 2.0f * 3.14159265f / (float)n - 3.14159265f / 2.0f;
+    int x1 = cx + (int)((r - 1) * cosf(a));
+    int y1 = cy + (int)((r - 1) * sinf(a));
+    line(cx, cy, x1, y1, BLACK);
   }
+  // Filled "active" wedge — approximate arc with triangles.
+  float a0 = (float)lit * 2.0f * 3.14159265f / (float)n - 3.14159265f / 2.0f;
+  float a1 = (float)(lit + 1) * 2.0f * 3.14159265f / (float)n - 3.14159265f / 2.0f;
+  for (int i = 0; i < 6; i++) {
+    float t0 = a0 + (a1 - a0) * (float)i / 6.0f;
+    float t1 = a0 + (a1 - a0) * (float)(i + 1) / 6.0f;
+    fillTriangle(cx, cy,
+                 cx + (int)(r * cosf(t0)), cy + (int)(r * sinf(t0)),
+                 cx + (int)(r * cosf(t1)), cy + (int)(r * sinf(t1)),
+                 BLACK);
+  }
+  fillCircle(cx, cy, 3, WHITE);
+  strokeCircle(cx, cy, 3, 1, BLACK);
+}
+
+static void paintSyncProgress(bool advanceFrame) {
+  if (advanceFrame) gSync.frame++;
+
+  clearWhite();
+  drawKicker(gSync.phase[0] ? gSync.phase : "sync", 16);
+
+  drawPizzaLoader(56, 52, 22, gSync.frame);
+  char pct[8];
+  snprintf(pct, sizeof(pct), "%d%%", gSync.percent);
+  drawStr(90, 40, pct, 2, BLACK);
+
+  int y = 86;
+  if (gSync.total > 0) {
+    int cur = (gSync.done < gSync.total) ? (gSync.done + 1) : gSync.total;
+    if (cur < 1) cur = 1;
+    char cnt[28];
+    snprintf(cnt, sizeof(cnt), "%d of %d notes", cur, gSync.total);
+    drawStrC(100, y, cnt, 1, BLACK);
+    y += 20;
+  }
+
+  if (gSync.note[0]) {
+    drawStrFit(16, y, 168, gSync.note, 1, BLACK);
+    y += 18;
+  }
+  if (gSync.chunk[0]) {
+    drawStrFit(16, y, 168, gSync.chunk, 1, BLACK);
+    y += 18;
+  }
+  if (gSync.process[0]) {
+    drawStrFit(16, y, 168, gSync.process, 1, BLACK);
+  } else if (!gSync.note[0] && !gSync.chunk[0] && gSync.total <= 0) {
+    drawStrC(100, 120, "please wait", 1, BLACK);
+  }
+
+  gSync.lastDrawMs = millis();
+  gSync.active = true;
   refresh();
+}
+
+void showSyncProgress(const char* phase, int percent,
+                      const char* noteDetail, const char* chunkDetail,
+                      const char* process, int done, int total) {
+  if (percent < 0) percent = 0;
+  if (percent > 100) percent = 100;
+
+  char nPhase[16] = {};
+  char nNote[36] = {};
+  char nChunk[36] = {};
+  char nProc[36] = {};
+  if (phase && phase[0]) strncpy(nPhase, phase, sizeof(nPhase) - 1);
+  else strncpy(nPhase, "sync", sizeof(nPhase) - 1);
+  if (noteDetail && noteDetail[0]) strncpy(nNote, noteDetail, sizeof(nNote) - 1);
+  if (chunkDetail && chunkDetail[0]) strncpy(nChunk, chunkDetail, sizeof(nChunk) - 1);
+  if (process && process[0]) strncpy(nProc, process, sizeof(nProc) - 1);
+
+  bool processChanged = strcmp(gSync.process, nProc) != 0;
+  // Wi-Fi try counters change every 500ms — keep state fresh but only redraw on the 5s pulse.
+  bool significant =
+    !gSync.active ||
+    strcmp(gSync.phase, nPhase) != 0 ||
+    strcmp(gSync.note, nNote) != 0 ||
+    strcmp(gSync.chunk, nChunk) != 0 ||
+    gSync.done != done ||
+    gSync.total != total ||
+    (processChanged && strcmp(nPhase, "wifi") != 0);
+
+  strncpy(gSync.phase, nPhase, sizeof(gSync.phase) - 1);
+  strncpy(gSync.note, nNote, sizeof(gSync.note) - 1);
+  strncpy(gSync.chunk, nChunk, sizeof(gSync.chunk) - 1);
+  strncpy(gSync.process, nProc, sizeof(gSync.process) - 1);
+  gSync.percent = percent;
+  gSync.done = done;
+  gSync.total = total;
+
+  uint32_t now = millis();
+  if (significant || (now - gSync.lastDrawMs) >= SYNC_PULSE_MS) {
+    // Advance pizza only on the 5s pulse path, not on every status change.
+    paintSyncProgress(!significant && gSync.active);
+  }
+}
+
+void syncProgressPulse() {
+  if (!gSync.active) return;
+  if ((millis() - gSync.lastDrawMs) < SYNC_PULSE_MS) return;
+  paintSyncProgress(true);
+}
+
+void syncProgressEnd() {
+  gSync.active = false;
+}
+
+void showObsidianSync(int done, int total) {
+  int pct = total > 0 ? (done * 100) / total : 0;
+  char d[24];
+  if (total > 0) snprintf(d, sizeof(d), "note #%03d", done < total ? done + 1 : total);
+  else           snprintf(d, sizeof(d), "vault");
+  showSyncProgress("vault", pct, d, nullptr, "pushing markdown", done, total);
 }
 
 void showTranscribing(int done, int total) {
-  clearWhite();
-  drawKicker("syncing", 20);
-  iconThinking(100, 76);
-  int barW = 144, barH = 10, barX = 28, barY = 116;
-  strokeRoundRect(barX, barY, barW, barH, 5, 1, BLACK);
-  if (total > 0) {
-    int fill = (done * (barW - 4)) / max(total, 1);
-    if (fill > 0) fillRoundRect(barX+2, barY+2, fill, barH-4, 3, BLACK);
-    char b[20]; snprintf(b, sizeof(b), "%d / %d", done, total);
-    drawStrC(100, 142, b, 1, BLACK);
-  } else {
-    drawStrC(100, 142, "please wait", 1, BLACK);
-  }
-  refresh();
+  int pct = total > 0 ? (done * 100) / total : 0;
+  char d[24];
+  if (total > 0) snprintf(d, sizeof(d), "note #%03d", done < total ? done + 1 : total);
+  else           snprintf(d, sizeof(d), "diarize");
+  showSyncProgress("diarize", pct, d, nullptr, "starting", done, total);
 }
 
 void showWifiConnecting(int attempt, int maxA) {
-  clearWhite();
-  drawKicker("wifi", 20);
-  iconWifi(100, 84);
-  int barW = 130, barH = 10, barX = 35, barY = 140;
-  strokeRoundRect(barX, barY, barW, barH, 5, 1, BLACK);
-  int fill = (attempt * (barW - 4)) / max(maxA, 1);
-  if (fill > 0) fillRoundRect(barX+2, barY+2, fill, barH-4, 3, BLACK);
-  char b[20]; snprintf(b, sizeof(b), "%d / %d", attempt, maxA);
-  drawStrC(100, 164, b, 1, BLACK);
-  refresh();
+  int pct = maxA > 0 ? (attempt * 100) / maxA : 0;
+  char proc[28];
+  snprintf(proc, sizeof(proc), "try %d of %d", attempt, maxA);
+  String ssid = cfg::wifiSsid();
+  char detail[36];
+  if (ssid.length()) snprintf(detail, sizeof(detail), "%.28s", ssid.c_str());
+  else               snprintf(detail, sizeof(detail), "wifi");
+  showSyncProgress("wifi", pct, detail, nullptr, proc, -1, -1);
 }
 
 void showDone() {

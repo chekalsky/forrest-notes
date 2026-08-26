@@ -193,15 +193,18 @@ void startSyncFlow() {
   }
 
   if (WiFi.status() == WL_CONNECTED) {
+    showSyncProgress("time", 100, "NTP clock", nullptr, "syncing", -1, -1);
     syncTimeFromNTP(6000);
     transcribeAll();
     loadIndex();
     obsidianSyncAll();        // push freshly-transcribed notes to the Obsidian vault
     WiFi.disconnect(true);
+    syncProgressEnd();
     showDone();
     soundSuccess();
     delay(1600);
   } else {
+    syncProgressEnd();
     showError("NO WIFI");
     delay(1800);
   }

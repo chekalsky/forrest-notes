@@ -2,6 +2,7 @@
 #include <Arduino.h>
 
 bool transcribe(const String& wavPath, int noteNum);
+bool transcribe(const String& wavPath, int noteNum, int notesDone, int notesTotal);
 void transcribeAll();
 
 String htmlEscape(const String& s);

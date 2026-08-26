@@ -61,12 +61,19 @@ static bool httpsSend(const char* host, const String& method, const String& path
   if (body.length()) client.print(body);
 
   uint32_t deadline = millis() + 30000;
-  while (!client.available() && millis() < deadline) delay(10);
+  while (!client.available() && millis() < deadline) {
+    syncProgressPulse();
+    delay(10);
+  }
 
   outStatus = 0; outBody = "";
   bool inBody = false, statusParsed = false, chunked = false;
   while (client.available() || (client.connected() && millis() < deadline)) {
-    if (!client.available()) { delay(5); continue; }
+    if (!client.available()) {
+      syncProgressPulse();
+      delay(5);
+      continue;
+    }
     if (!inBody) {
       String line = client.readStringUntil('\n');
       if (!statusParsed && line.startsWith("HTTP/")) {
@@ -497,13 +504,24 @@ void obsidianSyncAll() {
     if (noteIndex[i].hasText && !noteObsidianPushed(noteIndex[i].num)) pending++;
   if (pending == 0) return;
 
+  auto vaultPct = [&](int notesDone, int step, int steps) {
+    if (pending <= 0) return 100;
+    if (steps < 1) steps = 1;
+    int num = notesDone * steps + step;
+    int den = pending * steps;
+    return (num * 100) / den;
+  };
+
   int done = 0; bool pushedAny = false;
   for (int i = 0; i < (int)noteIndex.size(); i++) {
     if (!noteIndex[i].hasText || noteObsidianPushed(noteIndex[i].num)) continue;
     if (WiFi.status() != WL_CONNECTED) break;
 
-    showObsidianSync(done, pending);
     int num = noteIndex[i].num;
+    char detail[32];
+    snprintf(detail, sizeof(detail), "note #%03d", num);
+
+    showSyncProgress("vault", vaultPct(done, 0, 3), detail, nullptr, "reading transcript", done, pending);
     String userTag = String(noteIndex[i].tag);
     String createdUtc = noteCreatedUtc(num);
 
@@ -515,6 +533,7 @@ void obsidianSyncAll() {
     String title, summary, cleaned; std::vector<String> topics; NoteEvent evt;
     bool aiOn = cfg::githubAiEnrich(), haveKey = cfg::hasOpenAiKey();
     if (aiOn && haveKey) {
+      showSyncProgress("vault", vaultPct(done, 1, 3), detail, nullptr, "AI enrich", done, pending);
       bool ok = enrichNote(transcript, noteCreatedDeviceLabel(num),
                            title, summary, cleaned, topics, evt);
       Serial.printf("[sync] note %d enrich=%d title='%s' sum=%d clean=%d\n",
@@ -537,8 +556,17 @@ void obsidianSyncAll() {
     String fname = slug + ".md";
     String path = cfg::githubDir() + "/" + fname;
 
+    String pushSub = "push " + fname;
+    showSyncProgress("vault", vaultPct(done, 2, 3), detail,
+                     nullptr, pushSub.c_str(), done, pending);
+
     GhResult r = GH_NET;
     for (int attempt = 0; attempt < 3 && WiFi.status() == WL_CONNECTED; attempt++) {
+      if (attempt > 0) {
+        char sub[36];
+        snprintf(sub, sizeof(sub), "retry push %d/2", attempt);
+        showSyncProgress("vault", vaultPct(done, 2, 3), detail, nullptr, sub, done, pending);
+      }
       r = githubPutFile(path, md, "Add " + fname);
       if (r == GH_OK || r == GH_AUTH) break;
       delay(1500);
@@ -551,6 +579,7 @@ void obsidianSyncAll() {
 
   // Regenerate MOCs for every non-empty tag (cheap, <=20 tags) when we pushed ≥1 note.
   if (pushedAny) {
+    showSyncProgress("vault", 95, "tag indexes", nullptr, "updating MOCs", done, pending);
     for (int t = 0; t < tagCount; t++) {
       if (WiFi.status() != WL_CONNECTED) break;
       bool any = false;
@@ -559,5 +588,8 @@ void obsidianSyncAll() {
       if (any) buildAndPushTagMOC(tags[t]);
     }
   }
+  showSyncProgress("vault", pending > 0 ? (done * 100) / pending : 100,
+                   done == pending ? "vault done" : "partial",
+                   nullptr, nullptr, done, pending);
   Serial.printf("[gh] synced %d/%d notes\n", done, pending);
 }

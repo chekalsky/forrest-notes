@@ -9,7 +9,7 @@ Hold a button, talk, let go. A few seconds later a tidy Markdown note — with a
 ## ✨ What it does
 
 - **One-button voice capture** on a tiny e-ink device — no screen-tapping, no phone.
-- **On-device transcription** via OpenAI Whisper.
+- **On-device transcription** via OpenAI **`gpt-4o-transcribe-diarize`** (speaker-labeled turns on meetings).
 - **AI note cleanup (the headline upgrade):** a language model rewrites your messy, filler-filled speech into **coherent, succinct prose**, generates a **title**, a **one-sentence summary**, and **topic links** — automatically, every time you sync.
 - **Verbatim safety net:** the original raw transcript is tucked into a foldable callout, so nothing you said is ever lost.
 - **Syncs to GitHub** as clean Markdown with YAML frontmatter and tags — drop it into **Obsidian** and your notes organise themselves.
@@ -49,6 +49,7 @@ Everything below is new or changed on top of that foundation:
 | 📅 **Calendar events** | ➕ New | When a note describes a dated plan ("going to Soho House tomorrow", "dentist next Friday at 3"), the AI extracts it into `event_*` frontmatter (resolving "tomorrow" against the note's date). A small bridge can turn that into a real calendar event — see **Calendar sync**. |
 | 🧹 **Two-way delete** | ➕ New | Deleting a note on the device also removes its file from the GitHub vault and updates the tag index — via an offline-safe queue that drains on the next sync. |
 | 🗑️ **Erase All** | ➕ New | **Settings → Erase All** wipes every note from the SD card, with a choice of **Device only** (keep the vault) or **Device + GitHub** (also clear the vault). |
+| 🗣️ **Speaker diarization** | ➕ New | Sync uses `gpt-4o-transcribe-diarize` (with chunking for long meetings). An on-device **speaker library** maps up to 4 known voices to stable names. |
 
 ---
 
@@ -78,7 +79,7 @@ The printable enclosure (front & back housing, button, and an assembled STEP ref
 
 1. **The device** (assembled Pala Note hardware) and a **USB-C cable**.
 2. A computer (macOS/Linux/Windows).
-3. An **OpenAI API key** — from <https://platform.openai.com/api-keys>. (Used for Whisper transcription + note cleanup. Billing must be enabled.)
+3. An **OpenAI API key** — from <https://platform.openai.com/api-keys>. (Used for diarized transcription + note cleanup. Billing must be enabled.)
 4. A **GitHub repo** to store your notes (can be private) and a **fine-grained Personal Access Token** with **Contents: Read and write** on that repo — from <https://github.com/settings/tokens>.
 5. Your **2.4 GHz Wi-Fi** name + password (the ESP32-S3 Wi-Fi is 2.4 GHz only).
 
@@ -209,15 +210,46 @@ That's it — the device is now a personal AI note-taker.
 
 | Action | Control |
 |---|---|
-| **Record a note** | Hold the **record** button while idle, speak, release |
-| **Stop recording** | Release the record button |
+| **Record a short note** | Hold the **record** button while idle, speak, release |
+| **Record a meeting** | Triple-tap **record** to start (hands-free); triple-tap again to stop (cap ~2 hours) |
+| **Stop short recording** | Release the record button |
 | **Scroll / next** | Tap **power** |
 | **Select / open** | Tap **record** |
 | **Back** | Hold **record** |
 | **Delete a note** | Hold **power** (while viewing a note) — also removes it from the vault on next sync |
 | **Erase all notes** | **Settings → Erase All** → choose **Device only** or **Device + GitHub** (pwr switches, record selects, hold record cancels) |
+| **Manage speakers** | **Settings → Transfer** → open the portal → **Speakers** |
 
-After recording, the device transcribes and (when online) syncs to GitHub automatically. Each note becomes a Markdown file named after its topic, like `VoiceNotes/Soho.md`.
+After recording, open **Sync** (when online) to diarize pending audio and push enriched Markdown to GitHub. Each note becomes a Markdown file named after its topic, like `VoiceNotes/Soho.md`.
+
+---
+
+## 🗣️ Speaker library — best reference audio
+
+Long meetings keep stable names when the device sends **known speaker** clips with each diarize request (OpenAI allows **up to 4** per call). Add people under **Transfer → Speakers**.
+
+Guidance from [OpenAI’s speech-to-text docs](https://platform.openai.com/docs/guides/speech-to-text) and the [meeting diarization cookbook](https://cookbook.openai.com/examples/audio/speaker_aware_meeting_intelligence/speaker_aware_meeting_intelligence):
+
+### What works best
+
+| Rule | Detail |
+|---|---|
+| **Length** | **2–10 seconds** of continuous speech (OpenAI). Forrest Note keeps **2–5 s** (clips longer than 5 s are truncated from the start). Aim for ~3–5 s. |
+| **One voice only** | A single person speaking alone — no overlap, no second speaker in the background. |
+| **Clear & close** | Same kind of mic/distance you’ll use in meetings when practical; avoid muffled or far-field mutter. |
+| **Quiet room** | Minimal background noise, music, TV, or echo. |
+| **Natural speech** | A short normal sentence or two (not whispering, not shouting). |
+| **Consent** | Only store clips of people who agreed to be enrolled. |
+
+### Format on the portal
+
+- Prefer a **WAV** upload (mono, 16 kHz / 16-bit matches the device recorder). Other common formats the API accepts (`mp3`, `m4a`, …) may work if you convert first; WAV is the path of least resistance.
+- Name the speaker clearly (`Alice`, `Bob`) — that string becomes the transcript label.
+- Library can hold more than 4 people; **only the first 4 in the list** are attached to each diarize request (reorder by deleting/re-adding if needed).
+
+### Without a library
+
+Diarization still separates speakers, but labels are generic (`A`, `B`, …) and may not stay consistent across meeting chunks.
 
 ---
 
@@ -225,8 +257,8 @@ After recording, the device transcribes and (when online) syncs to GitHub automa
 
 On sync, for each new note the firmware:
 
-1. **Transcribes** the audio with **Whisper** (`whisper-1`).
-2. **Enriches** it with **`gpt-4o-mini`**, which returns: a one-word **topic title**, a one-sentence **summary**, a **cleaned** coherent rewrite of the body, up to 6 **topics**, and — when the note describes a dated plan — a calendar **event** (`{title, start, end, allDay}`, with relative dates like "tomorrow" resolved against the note's own date).
+1. **Diarizes / transcribes** with **`gpt-4o-transcribe-diarize`** (`diarized_json`). Long WAVs are split into ~8 min chunks under the API’s 25 MB upload cap. Up to **4** speaker-library references are attached so labels stay named and stable.
+2. **Enriches** it with **`gpt-4o-mini`**, which returns: a one-word **topic title**, a one-sentence **summary**, a **cleaned** coherent rewrite of the body (preserving speaker turns when present), up to 6 **topics**, and — when the note describes a dated plan — a calendar **event** (`{title, start, end, allDay}`, with relative dates like "tomorrow" resolved against the note's own date).
 3. **Writes Markdown** (named after the topic, e.g. `Soho.md`) and **pushes** it to your GitHub repo via the GitHub Contents API, plus updates a tag index page per tag.
 
 A generated note looks like:
@@ -295,7 +327,7 @@ Any automation that watches your vault can turn those into real calendar events.
 All runtime config lives in the device's NVS (namespace `forrest`) and is set via the portal — never in code:
 
 - `WIFI_SSID` / `WIFI_PASS` — Wi-Fi credentials
-- `OPENAI_KEY` — OpenAI API key (Whisper + enrichment)
+- `OPENAI_KEY` — OpenAI API key (diarize + enrichment)
 - GitHub: `repo` (owner/name), `branch` (default `main`), `dir` (default `VoiceNotes`), `token`, `enabled`, `ai-enrich`
 
 `secrets.h` exists only as an optional **one-time seed** and ships with `"...."` placeholders — you normally never touch it.

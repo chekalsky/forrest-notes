@@ -95,6 +95,9 @@ static String diarizedJsonToScript(const String& json, float timeOffsetSec) {
   return out;
 }
 
+// Forward decls — definitions below; used inside diarizeFileOnce for live UI.
+static void setDiarizeProcess(const char* process);
+
 // Diarize one WAV file (already ≤ DIARIZE_MAX_UPLOAD). Returns speaker script or "".
 static String diarizeFileOnce(const String& wavPath, float timeOffsetSec) {
   String oaiKey = cfg::openaiKey();
@@ -165,6 +168,7 @@ static String diarizeFileOnce(const String& wavPath, float timeOffsetSec) {
     return "";
   }
 
+  setDiarizeProcess("uploading");
   client.printf("POST /v1/audio/transcriptions HTTP/1.1\r\n"
                 "Host: api.openai.com\r\n"
                 "Authorization: Bearer %s\r\n"
@@ -191,6 +195,7 @@ static String diarizeFileOnce(const String& wavPath, float timeOffsetSec) {
     }
     rf.close();
     client.print("\r\n");
+    syncProgressPulse();
   }
 
   client.print(fileHead);
@@ -208,10 +213,13 @@ static String diarizeFileOnce(const String& wavPath, float timeOffsetSec) {
       Serial.println("[Diarize] upload stalled");
       return "";
     }
+    syncProgressPulse();
   }
   heap_caps_free(chunk);
   audio.close();
   client.print(post);
+
+  setDiarizeProcess("diarizing");
 
   // Stream response body to SD to keep RAM flat.
   char respPath[] = "/notes/_diar_resp.json";
@@ -220,13 +228,20 @@ static String diarizeFileOnce(const String& wavPath, float timeOffsetSec) {
   if (!respF) { client.stop(); return ""; }
 
   uint32_t deadline = millis() + DIARIZE_HTTP_TIMEOUT_MS;
-  while (!client.available() && client.connected() && millis() < deadline) delay(20);
+  while (!client.available() && client.connected() && millis() < deadline) {
+    syncProgressPulse();
+    delay(20);
+  }
 
   bool inBody = false, chunked = false;
   int httpStatus = 0;
   String headerBuf;
   while (client.available() || (client.connected() && millis() < deadline)) {
-    if (!client.available()) { delay(10); continue; }
+    if (!client.available()) {
+      syncProgressPulse();
+      delay(10);
+      continue;
+    }
     if (!inBody) {
       String line = client.readStringUntil('\n');
       headerBuf += line;
@@ -241,10 +256,13 @@ static String diarizeFileOnce(const String& wavPath, float timeOffsetSec) {
       uint8_t buf[512];
       int n = client.read(buf, sizeof(buf));
       if (n > 0) respF.write(buf, n);
+      syncProgressPulse();
     }
   }
   client.stop();
   respF.close();
+
+  setDiarizeProcess("parsing");
 
   if (httpStatus != 200) {
     Serial.printf("[Diarize] HTTP %d\n", httpStatus);
@@ -294,7 +312,48 @@ static String diarizeFileOnce(const String& wavPath, float timeOffsetSec) {
   return script;
 }
 
-static bool transcribeOnce(const String& wavPath, int noteNum) {
+// Context so diarizeFileOnce can update process text + pulse the pizza loader mid-request.
+static int gDzNote = 0, gDzDone = 0, gDzTotal = 1, gDzStep = 0, gDzSteps = 1;
+static char gDzChunk[36] = {};
+
+static int syncPct(int notesDone, int notesTotal, int step, int steps) {
+  if (notesTotal <= 0) return 0;
+  if (steps < 1) steps = 1;
+  if (step < 0) step = 0;
+  if (step > steps) step = steps;
+  int num = notesDone * steps + step;
+  int den = notesTotal * steps;
+  return (num * 100) / den;
+}
+
+static void showDiarizeProgress(int noteNum, int notesDone, int notesTotal,
+                                int step, int steps,
+                                const char* chunkLine, const char* process) {
+  gDzNote = noteNum;
+  gDzDone = notesDone;
+  gDzTotal = notesTotal;
+  gDzStep = step;
+  gDzSteps = steps < 1 ? 1 : steps;
+  if (chunkLine && chunkLine[0]) {
+    strncpy(gDzChunk, chunkLine, sizeof(gDzChunk) - 1);
+    gDzChunk[sizeof(gDzChunk) - 1] = 0;
+  } else {
+    gDzChunk[0] = 0;
+  }
+  char detail[32];
+  snprintf(detail, sizeof(detail), "note #%03d", noteNum);
+  showSyncProgress("diarize", syncPct(notesDone, notesTotal, step, gDzSteps),
+                   detail, gDzChunk[0] ? gDzChunk : nullptr, process,
+                   notesDone, notesTotal);
+}
+
+static void setDiarizeProcess(const char* process) {
+  showDiarizeProgress(gDzNote, gDzDone, gDzTotal, gDzStep, gDzSteps,
+                      gDzChunk[0] ? gDzChunk : nullptr, process);
+}
+
+static bool transcribeOnce(const String& wavPath, int noteNum,
+                           int notesDone, int notesTotal) {
   uint32_t pcm = wavPcmBytes(wavPath.c_str());
   if (pcm == 0) { Serial.println("[Diarize] empty/missing wav"); return false; }
 
@@ -304,15 +363,25 @@ static bool transcribeOnce(const String& wavPath, int noteNum) {
 
   if (wholeSize <= DIARIZE_MAX_UPLOAD) {
     Serial.printf("[Diarize] single shot note_%03d (%u bytes)\n", noteNum, (unsigned)wholeSize);
+    showDiarizeProgress(noteNum, notesDone, notesTotal, 0, 2, nullptr, "uploading");
     script = diarizeFileOnce(wavPath, 0.0f);
+    if (script.length())
+      showDiarizeProgress(noteNum, notesDone, notesTotal, 1, 2, nullptr, "saving transcript");
   } else {
-    Serial.printf("[Diarize] splitting note_%03d (%u pcm bytes)\n", noteNum, (unsigned)pcm);
+    int nChunks = (int)((pcm + chunkPcm - 1) / chunkPcm);
+    if (nChunks < 1) nChunks = 1;
+    Serial.printf("[Diarize] splitting note_%03d (%u pcm bytes, %d chunks)\n",
+                  noteNum, (unsigned)pcm, nChunks);
     uint32_t offset = 0;
     int part = 0;
     while (offset < pcm) {
       if (WiFi.status() != WL_CONNECTED) return false;
       uint32_t n = chunkPcm;
       if (offset + n > pcm) n = pcm - offset;
+
+      char chunkLine[36];
+      snprintf(chunkLine, sizeof(chunkLine), "chunk %d of %d", part + 1, nChunks);
+      showDiarizeProgress(noteNum, notesDone, notesTotal, part, nChunks, chunkLine, "preparing");
 
       char chunkPath[64];
       snprintf(chunkPath, sizeof(chunkPath), "%s/note_%03d_c%d.wav", NOTES_DIR, noteNum, part);
@@ -333,6 +402,7 @@ static bool transcribeOnce(const String& wavPath, int noteNum) {
       offset += n;
       part++;
     }
+    showDiarizeProgress(noteNum, notesDone, notesTotal, nChunks, nChunks, nullptr, "saving transcript");
   }
 
   if (!script.length()) return false;
@@ -347,13 +417,22 @@ static bool transcribeOnce(const String& wavPath, int noteNum) {
   return true;
 }
 
-bool transcribe(const String& wavPath, int noteNum) {
+bool transcribe(const String& wavPath, int noteNum, int notesDone, int notesTotal) {
   for (int attempt = 0; attempt < 3; attempt++) {
     if (WiFi.status() != WL_CONNECTED) return false;
-    if (transcribeOnce(wavPath, noteNum)) return true;
-    if (attempt < 2) { Serial.printf("[Diarize] retry %d/2\n", attempt + 1); delay(3000); }
+    if (attempt > 0) {
+      char sub[28];
+      snprintf(sub, sizeof(sub), "retry %d of 2", attempt);
+      showDiarizeProgress(noteNum, notesDone, notesTotal, 0, 1, nullptr, sub);
+      delay(3000);
+    }
+    if (transcribeOnce(wavPath, noteNum, notesDone, notesTotal)) return true;
   }
   return false;
+}
+
+bool transcribe(const String& wavPath, int noteNum) {
+  return transcribe(wavPath, noteNum, 0, 1);
 }
 
 void transcribeAll() {
@@ -362,6 +441,12 @@ void transcribeAll() {
 
   int pending = 0;
   for (int i = 0; i < (int)noteIndex.size(); i++) if (!noteIndex[i].hasText) pending++;
+  if (pending == 0) {
+    showSyncProgress("diarize", 100, "nothing pending", nullptr, "all notes have text", 0, 0);
+    delay(600);
+    return;
+  }
+
   int done = 0;
   for (int i = 0; i < (int)noteIndex.size(); i++) {
     if (noteIndex[i].hasText) continue;
@@ -369,10 +454,14 @@ void transcribeAll() {
       Serial.printf("[Diarize] wifi lost; %d note(s) stay pending\n", pending - done);
       break;
     }
-    showTranscribing(done, pending);
-    char wp[64]; snprintf(wp, sizeof(wp), "%s/note_%03d.wav", NOTES_DIR, noteIndex[i].num);
-    if (transcribe(String(wp), noteIndex[i].num)) done++;
+    int num = noteIndex[i].num;
+    showDiarizeProgress(num, done, pending, 0, 1, nullptr, "preparing");
+    char wp[64]; snprintf(wp, sizeof(wp), "%s/note_%03d.wav", NOTES_DIR, num);
+    if (transcribe(String(wp), num, done, pending)) done++;
   }
+  showSyncProgress("diarize", pending > 0 ? (done * 100) / pending : 100,
+                   done == pending ? "diarize done" : "partial",
+                   nullptr, nullptr, done, pending);
   Serial.printf("[Diarize] synced %d/%d pending\n", done, pending);
 }
 

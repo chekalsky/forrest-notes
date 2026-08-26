@@ -61,5 +61,14 @@ void showDeleteAllConfirm(int count, int cursor);
 void showDeleteAllDone(bool alsoVault);
 void showObsidianSync(int done, int total);
 
+// Sync status: phase, %, note line, optional chunk line, process name, note counts.
+// Note counts display as 1-based ("1 of 4 notes" while working on the first).
+// During long waits call syncProgressPulse() — refreshes at most every 5s with a pizza loader.
+void showSyncProgress(const char* phase, int percent,
+                      const char* noteDetail, const char* chunkDetail,
+                      const char* process, int done = -1, int total = -1);
+void syncProgressPulse();
+void syncProgressEnd();
+
 void redrawCurrentScreen();   // repaint the current state's screen
 void serviceDisplay();        // run each loop: paints pending redraws when panel is free
