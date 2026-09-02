@@ -71,8 +71,8 @@ bool record(bool holdMode) {
   f.flush();
   f.seek(44);
 
-  // Register in the index immediately so a crash / skipped tag confirm still
-  // leaves a discoverable note (provisional tag = DEFAULT_NOTE_TAG).
+  // Write .meta immediately so a crash / skipped tag confirm still leaves a
+  // discoverable note (provisional tag = DEFAULT_NOTE_TAG).
   writeNoteMeta(num, DEFAULT_NOTE_TAG);
   addToIndex(num, DEFAULT_NOTE_TAG, false);
   lastRecNum = num;

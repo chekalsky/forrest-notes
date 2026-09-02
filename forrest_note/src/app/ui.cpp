@@ -9,7 +9,6 @@
 #include "battery.h"
 #include "rtc.h"
 #include "config_store.h"
-#include "../../logo_bitmap.h"
 #include "../../sounds.h"
 #include "SD_MMC.h"
 
@@ -169,6 +168,21 @@ void drawProductWordmark(int cx, int y, uint8_t color) {
   drawStr(cx - textW("note", 2) / 2,    y + 22, "note",    2, color);
 }
 
+// Quiet 1-bit mountain night. Used as the idle face and the deep-sleep image.
+static void drawSleepMountains() {
+  fillCircle(46, 40, 13, BLACK);
+  fillCircle(53, 36, 12, WHITE);   // offset cut → crescent
+
+  thickLine(4, 148, 52, 112, 1, BLACK);
+  thickLine(52, 112, 96, 138, 1, BLACK);
+  thickLine(96, 138, 148, 100, 1, BLACK);
+  thickLine(148, 100, 198, 142, 1, BLACK);
+
+  fillTriangle(0, 200, 36, 128, 88, 200, BLACK);
+  fillTriangle(48, 200, 104, 72, 172, 200, BLACK);
+  fillTriangle(128, 200, 184, 122, 200, 200, BLACK);
+}
+
 void drawModernPill(int x, int y, int w, int h, const char* label, bool active) {
   if (active) {
     fillRoundRect(x, y, w, h, h/2, BLACK);
@@ -291,20 +305,18 @@ static void drawBolt(int x, int y) {          // small ~10x18 lightning bolt, to
 
 void showIdle() {
   clearWhite();
+  drawSleepMountains();
+
   int  batt     = readBatteryPercent();
   bool charging = isBatteryCharging();
-  drawBatteryRing(batt);
-  drawProductWordmark(100, 58, BLACK);
-
-  // numeric battery % (+ charging bolt), centered below the wordmark
   char b[8];
   if (batt < 0) snprintf(b, sizeof(b), "--");
   else          snprintf(b, sizeof(b), "%d%%", batt);
   int tw    = textW(b, 1);
   int boltW = charging ? 14 : 0;
-  int x     = 100 - (tw + boltW) / 2;
-  if (charging) { drawBolt(x, 132); x += boltW; }
-  drawStr(x, 144, b, 1, BLACK);
+  int x     = 200 - 12 - tw - boltW;   // sky, opposite the crescent
+  if (charging) { drawBolt(x, 18); x += boltW; }
+  drawStr(x, 22, b, 1, BLACK);
   refresh();
 }
 
@@ -734,12 +746,7 @@ void showError(const char* msg) {
 
 void showUltraSleepScreen() {
   clearWhite();
-  #ifdef LOGO_WIDTH
-    drawBitmap1BPP((W - LOGO_WIDTH) / 2, (H - LOGO_HEIGHT) / 2,
-                   logo_bitmap, LOGO_WIDTH, LOGO_HEIGHT, BLACK);
-  #else
-    drawProductWordmark(100, 70, BLACK);
-  #endif
+  drawSleepMountains();
   forceFullRefresh();   // this image persists through deep sleep; keep it crisp
 }
 

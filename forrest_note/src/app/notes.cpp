@@ -7,38 +7,59 @@
 #include "rtc.h"
 #include "draw.h"
 #include "SD_MMC.h"
+#include <algorithm>
 
-// ─── Index ────────────────────────────────────────────────────────────────
+// ─── In-memory catalog (source of truth on disk is note_NNN.meta) ─────────
+
+static int noteNumFromFilename(const String& base) {
+  // "note_012.wav" / .txt / .meta → 12. Skip diarize chunks ("note_012_c0.wav").
+  if (!base.startsWith("note_")) return 0;
+  int dot = base.lastIndexOf('.');
+  if (dot < 0) return 0;
+  String ext = base.substring(dot + 1);
+  if (ext != "wav" && ext != "txt" && ext != "meta") return 0;
+  String stem = base.substring(0, dot);
+  if (stem.indexOf('_', 5) >= 0) return 0;
+  int n = stem.substring(5).toInt();
+  return n > 0 ? n : 0;
+}
 
 void loadIndex() {
   noteIndex.clear();
-  File f = SD_MMC.open(INDEX_FILE);
-  if (!f) return;
-  while (f.available()) {
-    String ln = f.readStringUntil('\n'); ln.trim();
-    if (!ln.length()) continue;
-    int c1=ln.indexOf(','), c2=ln.indexOf(',',c1+1);
-    if (c1<0||c2<0) continue;
+  // Pala Note left a listing cache; ignore and delete it if still on the card.
+  if (SD_MMC.exists("/notes/index.csv")) SD_MMC.remove("/notes/index.csv");
+
+  std::vector<int> nums;
+  File dir = SD_MMC.open(NOTES_DIR);
+  if (dir && dir.isDirectory()) {
+    for (File e = dir.openNextFile(); e; e = dir.openNextFile()) {
+      String name = e.name();
+      e.close();
+      int slash = name.lastIndexOf('/');
+      String base = slash >= 0 ? name.substring(slash + 1) : name;
+      int n = noteNumFromFilename(base);
+      if (n <= 0) continue;
+      bool seen = false;
+      for (size_t i = 0; i < nums.size(); i++)
+        if (nums[i] == n) { seen = true; break; }
+      if (!seen) nums.push_back(n);
+    }
+    dir.close();
+  }
+  std::sort(nums.begin(), nums.end());
+
+  for (size_t i = 0; i < nums.size(); i++) {
     NoteEntry e;
-    e.num = ln.substring(0,c1).toInt();
-    strncpy(e.tag, ln.substring(c1+1,c2).c_str(), 31);
-    e.tag[31]='\0';
-    e.hasText = (ln.substring(c2+1).toInt()==1);
+    e.num = nums[i];
+    String tag = readNoteMetaValue(e.num, "tag");
+    if (!tag.length()) tag = DEFAULT_NOTE_TAG;
+    strncpy(e.tag, tag.c_str(), 31);
+    e.tag[31] = '\0';
+    char tp[64];
+    snprintf(tp, sizeof(tp), "%s/note_%03d.txt", NOTES_DIR, e.num);
+    e.hasText = SD_MMC.exists(tp);
     noteIndex.push_back(e);
   }
-  f.close();
-}
-
-void saveIndex() {
-  const char* tmp = "/notes/index.tmp";
-  if (SD_MMC.exists(tmp)) SD_MMC.remove(tmp);
-  File f = SD_MMC.open(tmp, FILE_WRITE);
-  if (!f) return;
-  for (int i=0; i<(int)noteIndex.size(); i++)
-    f.printf("%d,%s,%d\n", noteIndex[i].num, noteIndex[i].tag, noteIndex[i].hasText?1:0);
-  f.close();
-  if (SD_MMC.exists(INDEX_FILE)) SD_MMC.remove(INDEX_FILE);
-  SD_MMC.rename(tmp, INDEX_FILE);
 }
 
 void addToIndex(int num, const char* tag, bool hasText) {
@@ -47,7 +68,6 @@ void addToIndex(int num, const char* tag, bool hasText) {
       strncpy(noteIndex[i].tag, tag, 31);
       noteIndex[i].tag[31] = '\0';
       noteIndex[i].hasText = hasText;
-      saveIndex();
       return;
     }
   }
@@ -57,7 +77,6 @@ void addToIndex(int num, const char* tag, bool hasText) {
   e.tag[31] = '\0';
   e.hasText = hasText;
   noteIndex.push_back(e);
-  saveIndex();
 }
 
 void updateIndexHasText(int num) {
@@ -69,7 +88,6 @@ void updateIndexHasText(int num) {
       break;
     }
   }
-  saveIndex();
   writeNoteMeta(num, foundTag);
 }
 
@@ -102,13 +120,12 @@ void deleteNote(int num) {
       break;
     }
   }
-  saveIndex();
 
   obsidianFlushDeletes();   // self-guards on Wi-Fi/GitHub; rebuilds the MOC sans this note
 }
 
-// Wipe every note off the SD card: all note_* files (wav/txt/meta) plus the
-// index. Tag definitions (tags.txt) and any pending vault-delete queue (tombs.csv)
+// Wipe every note off the SD card: all note_* files (wav/txt/meta).
+// Tag definitions (tags.txt) and any pending vault-delete queue (tombs.csv)
 // are left intact. Local-only — notes already synced to Obsidian are not touched.
 int deleteAllNotes(bool alsoVault) {
   // When erasing everywhere, queue a vault delete for each pushed note BEFORE we
@@ -136,17 +153,13 @@ int deleteAllNotes(bool alsoVault) {
   }
   for (size_t i = 0; i < toRemove.size(); i++) SD_MMC.remove(toRemove[i].c_str());
 
-  if (SD_MMC.exists(INDEX_FILE)) SD_MMC.remove(INDEX_FILE);
+  if (SD_MMC.exists("/notes/index.csv")) SD_MMC.remove("/notes/index.csv");
   noteIndex.clear();
   return erased;
 }
 
 int nextNoteNumber() {
   int maxNum = 0;
-  for (int i = 0; i < (int)noteIndex.size(); i++)
-    if (noteIndex[i].num > maxNum) maxNum = noteIndex[i].num;
-
-  // Also scan the card so orphan WAVs (pre-index era) can't be overwritten.
   File dir = SD_MMC.open(NOTES_DIR);
   if (dir && dir.isDirectory()) {
     for (File e = dir.openNextFile(); e; e = dir.openNextFile()) {
@@ -154,8 +167,7 @@ int nextNoteNumber() {
       e.close();
       int slash = name.lastIndexOf('/');
       String base = slash >= 0 ? name.substring(slash + 1) : name;
-      if (!base.startsWith("note_")) continue;
-      int n = base.substring(5).toInt();   // "note_012.wav" → 12
+      int n = noteNumFromFilename(base);
       if (n > maxNum) maxNum = n;
     }
     dir.close();
@@ -168,7 +180,7 @@ void saveTag(int num, const char* tag) {
   for (int i = 0; i < (int)noteIndex.size(); i++)
     if (noteIndex[i].num == num) { hasText = noteIndex[i].hasText; break; }
   writeNoteMeta(num, tag);
-  addToIndex(num, tag, hasText);   // upsert — recording already inserted the row
+  addToIndex(num, tag, hasText);   // RAM upsert — .meta is already on disk
 }
 
 // ─── Tags ─────────────────────────────────────────────────────────────────
@@ -256,10 +268,10 @@ void replaceTagOnNotes(const char* oldTag, const char* newTag) {
     if (strcmp(noteIndex[i].tag, oldTag) == 0) {
       strncpy(noteIndex[i].tag, newTag, 31);
       noteIndex[i].tag[31] = 0;
+      writeNoteMeta(noteIndex[i].num, newTag);          // .meta is the catalog
       markNoteObsidianPushed(noteIndex[i].num, false);  // re-sync with corrected tag
     }
   }
-  saveIndex();
 }
 
 bool deleteTag(const char* tagName) {

@@ -1,13 +1,12 @@
 #pragma once
 #include <Arduino.h>
 
-// SD-card note store: index.csv, tags.txt, per-note wav/txt/meta, vault tombstones.
-// Callers: record (create), ui (list/detail), transcribe (hasText), obsidian (uid/meta),
-// portal (CRUD). Ticker *drawing* lives in ui.cpp; this module only supplies noteTickerText().
+// SD-card note store: per-note wav/txt/meta, tags.txt, vault tombstones.
+// RAM `noteIndex` is rebuilt from note_*.meta (and orphan wav/txt) — there is no
+// index.csv. Callers: record, ui, transcribe, obsidian, portal.
 
-void   loadIndex();
-void   saveIndex();
-void   addToIndex(int num, const char* tag, bool hasText);
+void   loadIndex();                     // rebuild RAM list from /notes
+void   addToIndex(int num, const char* tag, bool hasText);   // RAM upsert only
 void   updateIndexHasText(int num);
 void   deleteNote(int num);
 int    deleteAllNotes(bool alsoVault = false);   // wipe all notes off SD; alsoVault also queues vault deletes. returns count
