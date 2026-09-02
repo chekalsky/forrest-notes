@@ -25,6 +25,10 @@ extern "C" {
 #include "src/app/serial_cfg.h"
 #include "src/app/app_fsm.h"
 
+#ifdef FORREST_BLE_VOICE
+#include "src/app/ble_voice.h"
+#endif
+
 // Sketch entry. Hardware bring-up and global storage live here; user flows and
 // the button FSM live in src/app/. Control flow: see ARCHITECTURE.md.
 // All pin, timing, path and threshold constants live in config.h.
@@ -88,7 +92,9 @@ void setup() {
   delay(300);
   Serial.println("\n=== Forrest Note " FIRMWARE_VERSION " ===");
 
+#ifndef FORREST_BLE_VOICE
   cfg::begin();   // load Wi-Fi / API secrets from NVS (seeded from secrets.h once)
+#endif
 
   pinMode(BTN_REC, INPUT_PULLUP);
   pinMode(BTN_PWR, INPUT_PULLUP);
@@ -136,6 +142,11 @@ void setup() {
     showError("SD ERR");
     while (true) delay(1000);
   }
+
+#ifdef FORREST_BLE_VOICE
+  Serial.println("=== BLE Voice mode (hold REC, release to send) ===");
+  bleVoiceSetup();
+#else
   if (!SD_MMC.exists(NOTES_DIR)) SD_MMC.mkdir(NOTES_DIR);
   speakersEnsureDir();
   speakersLoad();
@@ -152,11 +163,16 @@ void setup() {
   } else {
     showIdle();
   }
+#endif
 }
 
 void loop() {
+#ifdef FORREST_BLE_VOICE
+  bleVoiceLoop();
+#else
   handleSerialConfig();
   serviceDisplay();
   appHandleLoop();
   delay(LOOP_DELAY_MS);
+#endif
 }

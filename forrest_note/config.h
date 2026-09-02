@@ -101,4 +101,10 @@
 #define FIRMWARE_VERSION       "v1.1"
 #define FW_VERSION             "v1.1"
 
+/* BLE voice keepalive (FORREST_BLE_VOICE) */
+#define BLE_PING_IDLE_MS       90000UL   // connected, nothing queued (~0.04 mAh/h)
+#define BLE_PING_QUEUE_MS      30000UL   // connected, recordings waiting to send
+#define BLE_CHUNK_DELAY_MS     12UL      // ms between audio chunks (slow/reliable)
+#define BLE_CHUNK_MAX          180       // max payload bytes per chunk
+
 #endif // CONFIG_H
