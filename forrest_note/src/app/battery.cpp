@@ -48,11 +48,44 @@ int readBatteryPercent() {
   return batteryPercentFromVoltage(v);
 }
 
-// No dedicated charge-status pin on this board. A LiPo only sits above ~4.30 V
-// while a charger is actively pushing it (it rests at ~4.2 V), so use that as a
-// charging heuristic.
+static float gChargeLastV = 0;
+static uint32_t gChargeLastMs = 0;
+
+static bool isUsbAttached() {
+#if ARDUINO_USB_CDC_ON_BOOT
+  // True when a USB host is connected (Mac, charger with data lines, etc.)
+  return (bool)Serial;
+#else
+  return false;
+#endif
+}
+
+// No dedicated CHRG pin on this board. Combine voltage + USB attach + rise detection.
 bool isBatteryCharging() {
-  return readBatteryVoltage() > 4.30f;
+  float v = readBatteryVoltage();
+
+  if (v > 4.22f) return true;
+
+#if ARDUINO_USB_CDC_ON_BOOT
+  // USB cable to host/charger while battery rail is alive → show charging bolt.
+  if (isUsbAttached() && v > 3.5f) return true;
+#endif
+
+  uint32_t now = millis();
+  if (gChargeLastMs != 0 && (now - gChargeLastMs) >= 3000) {
+    if (v > gChargeLastV + 0.012f) {
+      gChargeLastV = v;
+      gChargeLastMs = now;
+      return true;
+    }
+    gChargeLastV = v;
+    gChargeLastMs = now;
+  } else if (gChargeLastMs == 0) {
+    gChargeLastV = v;
+    gChargeLastMs = now;
+  }
+
+  return false;
 }
 
 void drawThickArcDot(int cx, int cy, int r, int deg, int thickness, uint8_t color) {
