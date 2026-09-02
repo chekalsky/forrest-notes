@@ -104,7 +104,10 @@
 /* BLE voice keepalive (FORREST_BLE_VOICE) */
 #define BLE_PING_IDLE_MS       90000UL   // connected, nothing queued (~0.04 mAh/h)
 #define BLE_PING_QUEUE_MS      30000UL   // connected, recordings waiting to send
-#define BLE_CHUNK_DELAY_MS     12UL      // ms between audio chunks (slow/reliable)
-#define BLE_CHUNK_MAX          180       // max payload bytes per chunk
+#define BLE_CHUNK_DELAY_MS     4UL       // ms between audio chunks (middle-ground)
+#define BLE_CHUNK_MAX          220       // max payload bytes per chunk
+#define BLE_XFER_CONN_SETTLE_MS 80UL     // wait after fast conn params during transfer
+#define BLE_MIN_REC_MS         500UL     // min hold / min PCM duration to queue or upload
+#define BLE_MIN_REC_PCM_BYTES  ((uint32_t)((SAMPLE_RATE * BLE_MIN_REC_MS) / 1000UL) * 2UL)
 
 #endif // CONFIG_H

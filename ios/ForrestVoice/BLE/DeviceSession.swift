@@ -98,6 +98,15 @@ extension DeviceSession: CBPeripheralDelegate {
             guard let chars = service.characteristics else { return }
             for char in chars {
                 switch char.uuid {
+                case ForrestVoiceProtocol.controlUUID:
+                    controlChar = char
+                    ackSender.configure(peripheral: peripheral, control: char)
+                default:
+                    break
+                }
+            }
+            for char in chars {
+                switch char.uuid {
                 case ForrestVoiceProtocol.deviceStatusUUID:
                     deviceStatusChar = char
                     subscribeIfNeeded(char)
@@ -107,14 +116,11 @@ extension DeviceSession: CBPeripheralDelegate {
                 case ForrestVoiceProtocol.audioDataUUID:
                     audioDataChar = char
                     subscribeIfNeeded(char)
-                case ForrestVoiceProtocol.controlUUID:
-                    controlChar = char
-                    ackSender.configure(peripheral: peripheral, control: char)
                 default:
                     break
                 }
             }
-            log("Subscribed to Forrest Voice characteristics")
+            log("Subscribed to Forrest Voice characteristics (control ready=\(controlChar != nil))")
         }
     }
 

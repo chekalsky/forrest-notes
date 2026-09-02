@@ -22,7 +22,7 @@ enum ForrestVoiceProtocol {
     static let cmdXferComplete: UInt8 = 0x02
     static let cmdRetryPending: UInt8 = 0x04
 
-    static let ackEveryChunks = 8
+    static let ackEveryChunks = 16
 }
 
 struct DeviceStatusPayload {

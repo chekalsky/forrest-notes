@@ -57,7 +57,7 @@ State enum: `0=idle 1=recording 2=finalizing 3=transferring 4=waiting 5=success 
 [8..]  audio bytes (payloadLen)
 ```
 
-Phone sends Control ACK every 8 chunks (optional for PoC):
+Phone sends Control ACK every 16 chunks (optional for PoC):
 
 ```
 [0] cmd = 0x01 (ACK_CHUNK)

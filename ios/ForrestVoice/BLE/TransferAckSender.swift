@@ -20,7 +20,12 @@ final class TransferAckSender {
         let peripheral = self.peripheral
         let controlChar = self.controlChar
         lock.unlock()
-        guard let peripheral, let controlChar else { return }
+        guard let peripheral, let controlChar else {
+            Task { @MainActor in
+                AppLog.shared.log("ble", "ACK dropped — control char not ready seq=\(seq)")
+            }
+            return
+        }
 
         var payload = Data(count: 5)
         payload[0] = ForrestVoiceProtocol.cmdAckChunk
@@ -39,7 +44,12 @@ final class TransferAckSender {
         let peripheral = self.peripheral
         let controlChar = self.controlChar
         lock.unlock()
-        guard let peripheral, let controlChar else { return }
+        guard let peripheral, let controlChar else {
+            Task { @MainActor in
+                AppLog.shared.log("ble", "RETRY_PENDING dropped — control char not ready")
+            }
+            return
+        }
 
         var payload = Data(count: 1)
         payload[0] = ForrestVoiceProtocol.cmdRetryPending

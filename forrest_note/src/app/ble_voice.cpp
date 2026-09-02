@@ -75,6 +75,17 @@ static void requestIdleBleConnection() {
   esp_ble_gap_update_conn_params(&params);
 }
 
+static void requestTransferBleConnection() {
+  if (!gHasRemoteBda) return;
+  esp_ble_conn_update_params_t params = {};
+  memcpy(params.bda, gRemoteBda, sizeof(params.bda));
+  params.min_int = 0x000C;  // 15 ms
+  params.max_int = 0x0020;  // 40 ms
+  params.latency = 0;
+  params.timeout = 400;
+  esp_ble_gap_update_conn_params(&params);
+}
+
 static bool waitForAck(uint16_t needSeq, uint32_t timeoutMs) {
   uint32_t t0 = millis();
   while (millis() - t0 < timeoutMs) {
@@ -86,6 +97,14 @@ static bool waitForAck(uint16_t needSeq, uint32_t timeoutMs) {
   }
   Serial.printf("[BLE] ACK timeout need=%u last=%u\n", needSeq, gAckSeq);
   return false;
+}
+
+static bool wavPcmTooShort(uint32_t pcmBytes) {
+  return pcmBytes < BLE_MIN_REC_PCM_BYTES;
+}
+
+static bool wavFileTooShort(uint32_t fileBytes) {
+  return fileBytes <= 44 || wavPcmTooShort(fileBytes - 44);
 }
 
 static bool sendWavFile(const char* path) {
@@ -108,6 +127,9 @@ static bool sendWavFile(const char* path) {
 
   bleVoiceUiSetState(BLE_UI_SENDING);
   notifyStatus(FV_STATE_TRANSFERRING);
+
+  requestTransferBleConnection();
+  delay(BLE_XFER_CONN_SETTLE_MS);
 
   gAckReceived = false;
   gAckSeq = 0;
@@ -186,6 +208,8 @@ static bool sendWavFile(const char* path) {
   free(readBuf);
   free(packet);
   f.close();
+
+  requestIdleBleConnection();
 
   if (!ok || sent < totalBytes) {
     notifyStatus(FV_STATE_ERROR);
@@ -413,7 +437,7 @@ static bool recordHoldToFile(const char* path) {
 
     uint32_t elapsed = millis() - t0;
     // Match record.cpp: keep going while held, or until min hold time elapses.
-    if (elapsed >= 500 && !recButtonStillHeld()) break;
+    if (elapsed >= BLE_MIN_REC_MS && !recButtonStillHeld()) break;
 
     if (millis() - lastFlush >= REC_FLUSH_MS) {
       lastFlush = millis();
@@ -439,9 +463,9 @@ static bool recordHoldToFile(const char* path) {
   writePcmWavHeader(f, totalMono);
   f.close();
 
-  if (totalMono <= 1000) {
+  if (wavPcmTooShort(totalMono)) {
     SD_MMC.remove(path);
-    Serial.println("[BLE] discarded (too short)");
+    Serial.printf("[BLE] discarded (< %lums)\n", BLE_MIN_REC_MS);
     bleVoiceUiSetState(BLE_UI_ERROR, "Too short");
     delay(1200);
     bleVoiceUiSetState(BLE_UI_READY);
@@ -496,6 +520,18 @@ static void tryDrainQueue() {
   if (!bleQueuePeekPath(path, sizeof(path))) {
     gDrainQueue = false;
     return;
+  }
+
+  File peek = SD_MMC.open(path);
+  if (peek) {
+    uint32_t fileBytes = (uint32_t)peek.size();
+    peek.close();
+    if (wavFileTooShort(fileBytes)) {
+      Serial.printf("[BLE] dropping queued file (< %lums)\n", BLE_MIN_REC_MS);
+      bleQueueRemoveFirst();
+      bleVoiceUiSetQueueCount(bleQueueCount());
+      return;
+    }
   }
 
   if (sendWavFile(path)) {

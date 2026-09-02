@@ -23,7 +23,7 @@
 #define FV_CMD_CANCEL_XFER 0x03
 #define FV_CMD_RETRY_PENDING 0x04
 
-#define FV_ACK_EVERY 8
+#define FV_ACK_EVERY 16
 
 #define FV_STATE_IDLE 0
 #define FV_STATE_RECORDING 1
