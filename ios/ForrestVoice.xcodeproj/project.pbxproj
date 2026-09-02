@@ -1,0 +1,407 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		018DF204330D0305A61410F4 /* OpenClawService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D8466831FC0B1292523D0E6 /* OpenClawService.swift */; };
+		1B2632C29859C532F85ADB02 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0759E19953EA3EBE8A3A36A /* KeychainStore.swift */; };
+		278609E7580236E9516288E6 /* RecordingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8B01C466C3D32A1CB929C05 /* RecordingStore.swift */; };
+		2819314B7A6E5D7AFFB03B72 /* OpenClawURLSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2C552EB44B2AE2ACED613DB /* OpenClawURLSession.swift */; };
+		2A70C85F6FB38047275F2DA0 /* SpeechTranscriptionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 978797963EB1527422F4B17F /* SpeechTranscriptionService.swift */; };
+		30B6F1BE4CC1F6C3C68605FD /* AppLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91BBE893C2EE857FADB71627 /* AppLog.swift */; };
+		3C3A0C456B6F941881F32467 /* TransferProgressView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EFFF62A9D4365F8EB1E4F38 /* TransferProgressView.swift */; };
+		3DFFCCD638D3B3CB16751D76 /* ForrestVoiceApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1CD6EE8EEF659F04320F810 /* ForrestVoiceApp.swift */; };
+		608F046DEFE9EF93B98F86BF /* RecordingProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65BBC635BEA5D07846933A7B /* RecordingProcessor.swift */; };
+		6605B8A7CDEC08D32325BDFE /* TransferProgressInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFAC9209EFED8E1C64AB3BBA /* TransferProgressInfo.swift */; };
+		85B7D50951FF650B451016AD /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A08F6C011E125F60FEFB5CF7 /* NotificationService.swift */; };
+		9EB355FC74CCE74055CE7E54 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DC9853819A0DD6E2B4A2CC7 /* SettingsView.swift */; };
+		AABE64FFA8CA5EF3645FA5C0 /* AudioTransferManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46C07AC3F583220418F4AE26 /* AudioTransferManager.swift */; };
+		ACD8B83D03CFB5DB7B1D4D72 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3BC1F4644376719CDD6A15D /* ContentView.swift */; };
+		B82B06F0EECAE5D7C4CD8A95 /* ForrestVoiceProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 949133AF8191C88A048E8BD4 /* ForrestVoiceProtocol.swift */; };
+		C15DEC2F1D47113D4AE1A309 /* BluetoothManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB53B36672D9F8553B9BAA84 /* BluetoothManager.swift */; };
+		D079AD7C6758D6F374A5F5C4 /* TransferAckSender.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83C11074A8B92450B637D889 /* TransferAckSender.swift */; };
+		D35D45B981EBB8445D47BF10 /* DeviceSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5D74967A272DE1F2B2B336C /* DeviceSession.swift */; };
+		FF0100017F034415BC82B7AF /* OpenClawSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8F8DECE28466F7A698E522 /* OpenClawSettings.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		0DC9853819A0DD6E2B4A2CC7 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		26A2C167C35719C1C3152AD7 /* ForrestVoice.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ForrestVoice.entitlements; sourceTree = "<group>"; };
+		46C07AC3F583220418F4AE26 /* AudioTransferManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioTransferManager.swift; sourceTree = "<group>"; };
+		4DF453F244E681047060D68F /* ForrestVoice.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = ForrestVoice.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		65BBC635BEA5D07846933A7B /* RecordingProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingProcessor.swift; sourceTree = "<group>"; };
+		7C8F8DECE28466F7A698E522 /* OpenClawSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenClawSettings.swift; sourceTree = "<group>"; };
+		83C11074A8B92450B637D889 /* TransferAckSender.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransferAckSender.swift; sourceTree = "<group>"; };
+		91BBE893C2EE857FADB71627 /* AppLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLog.swift; sourceTree = "<group>"; };
+		949133AF8191C88A048E8BD4 /* ForrestVoiceProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForrestVoiceProtocol.swift; sourceTree = "<group>"; };
+		978797963EB1527422F4B17F /* SpeechTranscriptionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechTranscriptionService.swift; sourceTree = "<group>"; };
+		9D8466831FC0B1292523D0E6 /* OpenClawService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenClawService.swift; sourceTree = "<group>"; };
+		9EFFF62A9D4365F8EB1E4F38 /* TransferProgressView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransferProgressView.swift; sourceTree = "<group>"; };
+		A08F6C011E125F60FEFB5CF7 /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
+		B1CD6EE8EEF659F04320F810 /* ForrestVoiceApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForrestVoiceApp.swift; sourceTree = "<group>"; };
+		B3BC1F4644376719CDD6A15D /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		CFAC9209EFED8E1C64AB3BBA /* TransferProgressInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransferProgressInfo.swift; sourceTree = "<group>"; };
+		D0759E19953EA3EBE8A3A36A /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
+		D2C552EB44B2AE2ACED613DB /* OpenClawURLSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenClawURLSession.swift; sourceTree = "<group>"; };
+		D5D74967A272DE1F2B2B336C /* DeviceSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceSession.swift; sourceTree = "<group>"; };
+		D8B01C466C3D32A1CB929C05 /* RecordingStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingStore.swift; sourceTree = "<group>"; };
+		EB53B36672D9F8553B9BAA84 /* BluetoothManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BluetoothManager.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		1DA67A95638EE89735B30ED6 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				B1CD6EE8EEF659F04320F810 /* ForrestVoiceApp.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		5117A4CCE937553AF0D10480 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				4DF453F244E681047060D68F /* ForrestVoice.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		77D560AB92066C89AB81CE98 /* BLE */ = {
+			isa = PBXGroup;
+			children = (
+				EB53B36672D9F8553B9BAA84 /* BluetoothManager.swift */,
+				D5D74967A272DE1F2B2B336C /* DeviceSession.swift */,
+				949133AF8191C88A048E8BD4 /* ForrestVoiceProtocol.swift */,
+				83C11074A8B92450B637D889 /* TransferAckSender.swift */,
+			);
+			path = BLE;
+			sourceTree = "<group>";
+		};
+		C354463BBEC64F6A8C1859C8 /* ForrestVoice */ = {
+			isa = PBXGroup;
+			children = (
+				26A2C167C35719C1C3152AD7 /* ForrestVoice.entitlements */,
+				1DA67A95638EE89735B30ED6 /* App */,
+				D75825719116A8EC3AD9E1B1 /* Audio */,
+				77D560AB92066C89AB81CE98 /* BLE */,
+				CF51140DA148D37EE0909424 /* Services */,
+				DC13D0D8D38284AF9F6DCCC0 /* UI */,
+			);
+			path = ForrestVoice;
+			sourceTree = "<group>";
+		};
+		CF51140DA148D37EE0909424 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				91BBE893C2EE857FADB71627 /* AppLog.swift */,
+				D0759E19953EA3EBE8A3A36A /* KeychainStore.swift */,
+				A08F6C011E125F60FEFB5CF7 /* NotificationService.swift */,
+				9D8466831FC0B1292523D0E6 /* OpenClawService.swift */,
+				7C8F8DECE28466F7A698E522 /* OpenClawSettings.swift */,
+				D2C552EB44B2AE2ACED613DB /* OpenClawURLSession.swift */,
+				65BBC635BEA5D07846933A7B /* RecordingProcessor.swift */,
+				978797963EB1527422F4B17F /* SpeechTranscriptionService.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		D75825719116A8EC3AD9E1B1 /* Audio */ = {
+			isa = PBXGroup;
+			children = (
+				46C07AC3F583220418F4AE26 /* AudioTransferManager.swift */,
+				D8B01C466C3D32A1CB929C05 /* RecordingStore.swift */,
+				CFAC9209EFED8E1C64AB3BBA /* TransferProgressInfo.swift */,
+			);
+			path = Audio;
+			sourceTree = "<group>";
+		};
+		DC13D0D8D38284AF9F6DCCC0 /* UI */ = {
+			isa = PBXGroup;
+			children = (
+				B3BC1F4644376719CDD6A15D /* ContentView.swift */,
+				0DC9853819A0DD6E2B4A2CC7 /* SettingsView.swift */,
+				9EFFF62A9D4365F8EB1E4F38 /* TransferProgressView.swift */,
+			);
+			path = UI;
+			sourceTree = "<group>";
+		};
+		E1F846EB836CF7F8B942057D = {
+			isa = PBXGroup;
+			children = (
+				C354463BBEC64F6A8C1859C8 /* ForrestVoice */,
+				5117A4CCE937553AF0D10480 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		4E34D80A188F42AAD7A0BB6F /* ForrestVoice */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = ECDDEDB553A01F91C5774DD8 /* Build configuration list for PBXNativeTarget "ForrestVoice" */;
+			buildPhases = (
+				6673517C19760D429DBF7EF2 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = ForrestVoice;
+			packageProductDependencies = (
+			);
+			productName = ForrestVoice;
+			productReference = 4DF453F244E681047060D68F /* ForrestVoice.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		59BA65BFCA2B8137B66464E6 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					4E34D80A188F42AAD7A0BB6F = {
+						DevelopmentTeam = RBT866NCF2;
+					};
+				};
+			};
+			buildConfigurationList = 31E86BA823BBDC35B809F3E3 /* Build configuration list for PBXProject "ForrestVoice" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = E1F846EB836CF7F8B942057D;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 5117A4CCE937553AF0D10480 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				4E34D80A188F42AAD7A0BB6F /* ForrestVoice */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		6673517C19760D429DBF7EF2 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				30B6F1BE4CC1F6C3C68605FD /* AppLog.swift in Sources */,
+				AABE64FFA8CA5EF3645FA5C0 /* AudioTransferManager.swift in Sources */,
+				C15DEC2F1D47113D4AE1A309 /* BluetoothManager.swift in Sources */,
+				ACD8B83D03CFB5DB7B1D4D72 /* ContentView.swift in Sources */,
+				D35D45B981EBB8445D47BF10 /* DeviceSession.swift in Sources */,
+				3DFFCCD638D3B3CB16751D76 /* ForrestVoiceApp.swift in Sources */,
+				B82B06F0EECAE5D7C4CD8A95 /* ForrestVoiceProtocol.swift in Sources */,
+				1B2632C29859C532F85ADB02 /* KeychainStore.swift in Sources */,
+				85B7D50951FF650B451016AD /* NotificationService.swift in Sources */,
+				018DF204330D0305A61410F4 /* OpenClawService.swift in Sources */,
+				FF0100017F034415BC82B7AF /* OpenClawSettings.swift in Sources */,
+				2819314B7A6E5D7AFFB03B72 /* OpenClawURLSession.swift in Sources */,
+				608F046DEFE9EF93B98F86BF /* RecordingProcessor.swift in Sources */,
+				278609E7580236E9516288E6 /* RecordingStore.swift in Sources */,
+				9EB355FC74CCE74055CE7E54 /* SettingsView.swift in Sources */,
+				2A70C85F6FB38047275F2DA0 /* SpeechTranscriptionService.swift in Sources */,
+				D079AD7C6758D6F374A5F5C4 /* TransferAckSender.swift in Sources */,
+				6605B8A7CDEC08D32325BDFE /* TransferProgressInfo.swift in Sources */,
+				3C3A0C456B6F941881F32467 /* TransferProgressView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		3C9A0C824DD6623F3E328CFA /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = ForrestVoice/ForrestVoice.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = RBT866NCF2;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = ForrestVoice/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.forrest.voice;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		6696C878B03D754A28BBCDF4 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		A3BA8AF864E7C3E8C6A2EBA8 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		C7EBE2410F0E0888F89567DE /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = ForrestVoice/ForrestVoice.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = RBT866NCF2;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = ForrestVoice/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.forrest.voice;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		31E86BA823BBDC35B809F3E3 /* Build configuration list for PBXProject "ForrestVoice" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				6696C878B03D754A28BBCDF4 /* Debug */,
+				A3BA8AF864E7C3E8C6A2EBA8 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		ECDDEDB553A01F91C5774DD8 /* Build configuration list for PBXNativeTarget "ForrestVoice" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				3C9A0C824DD6623F3E328CFA /* Debug */,
+				C7EBE2410F0E0888F89567DE /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 59BA65BFCA2B8137B66464E6 /* Project object */;
+}
