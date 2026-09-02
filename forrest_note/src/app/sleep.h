@@ -6,3 +6,4 @@
 
 void resetActivity();
 void enterUltraSleep();
+void enterBleVoiceSleep();

@@ -9,7 +9,7 @@ final class BluetoothManager: NSObject, ObservableObject {
     @Published private(set) var connectedName: String?
     @Published private(set) var deviceState: DeviceState?
     @Published private(set) var devicePendingCount: Int = 0
-    @Published private(set) var lastDevicePing: Date?
+    @Published private(set) var lastDeviceStatus: Date?
     @Published private(set) var transferInfo: TransferProgressInfo = .idle
     @Published private(set) var recordingsRevision: Int = 0
 
@@ -22,6 +22,8 @@ final class BluetoothManager: NSObject, ObservableObject {
     private let transferManager: AudioTransferManager
     private var session: DeviceSession?
     private var connectedPeripheral: CBPeripheral?
+    private var knownPeripheralID: UUID?
+    private var reconnectTask: Task<Void, Never>?
 
     override init() {
         transferManager = AudioTransferManager(store: recordingStore)
@@ -69,7 +71,7 @@ final class BluetoothManager: NSObject, ObservableObject {
         deviceSession.onStatusUpdate = { [weak self] payload in
             self?.deviceState = payload.state
             self?.devicePendingCount = payload.pendingCount
-            self?.lastDevicePing = Date()
+            self?.lastDeviceStatus = Date()
         }
         deviceSession.onRecordingReceived = { [weak self] _, _ in
             Task { @MainActor in
@@ -80,12 +82,28 @@ final class BluetoothManager: NSObject, ObservableObject {
 
     func startScanning() {
         guard central.state == .poweredOn, connectedPeripheral == nil else { return }
+        reconnectTask?.cancel()
         central.scanForPeripherals(
             withServices: [ForrestVoiceProtocol.serviceUUID],
             options: [CBCentralManagerScanOptionAllowDuplicatesKey: false]
         )
         isScanning = true
         appendLog("Scanning for Forrest Voice…")
+    }
+
+    private func scheduleReconnect(after seconds: TimeInterval = 2) {
+        reconnectTask?.cancel()
+        reconnectTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(seconds))
+            guard !Task.isCancelled, connectedPeripheral == nil else { return }
+            if let id = knownPeripheralID,
+               let peripheral = central.retrievePeripherals(withIdentifiers: [id]).first {
+                appendLog("Reconnecting to known device…")
+                connect(peripheral)
+            } else {
+                startScanning()
+            }
+        }
     }
 
     func stopScanning() {
@@ -99,14 +117,23 @@ final class BluetoothManager: NSObject, ObservableObject {
         }
     }
 
+    func eraseAllLogsAndRecordings() throws {
+        try recordingStore.deleteAll()
+        AppLog.shared.clear()
+        recordingsRevision += 1
+        AppLog.shared.log("app", "Erased all logs and recordings")
+    }
+
     private func appendLog(_ line: String) {
         AppLog.shared.log("ble", line)
     }
 
     private func connect(_ peripheral: CBPeripheral) {
         guard connectedPeripheral == nil else { return }
+        reconnectTask?.cancel()
         stopScanning()
         connectedPeripheral = peripheral
+        knownPeripheralID = peripheral.identifier
         connectedName = peripheral.name ?? peripheral.identifier.uuidString
         appendLog("Connecting to \(connectedName ?? "?")…")
 
@@ -134,6 +161,7 @@ extension BluetoothManager: CBCentralManagerDelegate {
             appendLog("Restoring BLE state (background relaunch)")
             if let peripherals = dict[CBCentralManagerRestoredStatePeripheralsKey] as? [CBPeripheral] {
                 for peripheral in peripherals {
+                    knownPeripheralID = peripheral.identifier
                     connectedPeripheral = peripheral
                     connectedName = peripheral.name
                     let deviceSession = DeviceSession(peripheral: peripheral, transferManager: transferManager)
@@ -158,7 +186,10 @@ extension BluetoothManager: CBCentralManagerDelegate {
         rssi RSSI: NSNumber
     ) {
         Task { @MainActor in
-            let name = peripheral.name ?? advertisementData[CBAdvertisementDataLocalNameKey] as? String ?? "?"
+            guard connectedPeripheral == nil else { return }
+            let name = peripheral.name
+                ?? advertisementData[CBAdvertisementDataLocalNameKey] as? String
+                ?? "?"
             appendLog("Discovered \(name) rssi=\(RSSI)")
             connect(peripheral)
         }
@@ -168,6 +199,7 @@ extension BluetoothManager: CBCentralManagerDelegate {
         Task { @MainActor in
             appendLog("Connected")
             connectedName = peripheral.name ?? peripheral.identifier.uuidString
+            knownPeripheralID = peripheral.identifier
             session?.discoverServices()
         }
     }
@@ -184,10 +216,10 @@ extension BluetoothManager: CBCentralManagerDelegate {
             session = nil
             deviceState = nil
             devicePendingCount = 0
-            lastDevicePing = nil
+            lastDeviceStatus = nil
             transferInfo = .idle
             completeResetTask?.cancel()
-            startScanning()
+            scheduleReconnect()
         }
     }
 
@@ -199,7 +231,7 @@ extension BluetoothManager: CBCentralManagerDelegate {
         Task { @MainActor in
             appendLog("Connect failed: \(error?.localizedDescription ?? "?")")
             connectedPeripheral = nil
-            startScanning()
+            scheduleReconnect(after: 3)
         }
     }
 }

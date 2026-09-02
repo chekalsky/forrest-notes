@@ -101,13 +101,22 @@
 #define FIRMWARE_VERSION       "v1.1"
 #define FW_VERSION             "v1.1"
 
-/* BLE voice keepalive (FORREST_BLE_VOICE) */
-#define BLE_PING_IDLE_MS       90000UL   // connected, nothing queued (~0.04 mAh/h)
-#define BLE_PING_QUEUE_MS      30000UL   // connected, recordings waiting to send
+/* BLE voice power (FORREST_BLE_VOICE) */
 #define BLE_CHUNK_DELAY_MS     4UL       // ms between audio chunks (middle-ground)
 #define BLE_CHUNK_MAX          220       // max payload bytes per chunk
 #define BLE_XFER_CONN_SETTLE_MS 80UL     // wait after fast conn params during transfer
 #define BLE_MIN_REC_MS         500UL     // min hold / min PCM duration to queue or upload
 #define BLE_MIN_REC_PCM_BYTES  ((uint32_t)((SAMPLE_RATE * BLE_MIN_REC_MS) / 1000UL) * 2UL)
+#define BLE_IDLE_SLEEP_MS      120000UL  // deep sleep after this long with no activity
+#define BLE_ADV_INTERVAL_MIN   0x0020    // 20 ms — stay discoverable while awake
+#define BLE_ADV_INTERVAL_MAX   0x0040    // 40 ms
+#define BLE_LOOP_SLEEP_MS      50UL
+#define BLE_LOOP_SLEEP_BUSY_MS 10UL
+#define BLE_TX_LED_PIN         3         // Waveshare user LED (active LOW); -1 = off
+#define BLE_TX_LED_ADV_ON_MS   100UL     // advertising: 100 ms on, 400 ms off (1 Hz)
+#define BLE_TX_LED_ADV_OFF_MS  400UL
+#define BLE_TX_LED_CONN_ON_MS  500UL     // connected idle: 500 ms on, 1500 ms off
+#define BLE_TX_LED_CONN_OFF_MS 1500UL
+#define BLE_TX_LED_XFER_MS     125UL     // transfer blink half-period
 
 #endif // CONFIG_H

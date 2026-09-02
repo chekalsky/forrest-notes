@@ -12,34 +12,78 @@ final class OpenClawService {
         let agentId: String
         let deliver: Bool
         let wakeMode: String
+        let channel: String?
+        let to: String?
+
+        private enum CodingKeys: String, CodingKey {
+            case message, name, agentId, deliver, wakeMode, channel, to
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(message, forKey: .message)
+            try container.encode(name, forKey: .name)
+            try container.encode(agentId, forKey: .agentId)
+            try container.encode(deliver, forKey: .deliver)
+            try container.encode(wakeMode, forKey: .wakeMode)
+            if let channel, let to {
+                try container.encode(channel, forKey: .channel)
+                try container.encode(to, forKey: .to)
+            }
+        }
     }
 
-    /// POST /hooks/agent — deliver:true sends agent reply to configured channel (e.g. Telegram).
-    func sendTranscript(_ text: String, recordingId: UInt16) async throws {
+    /// Single hooks/agent POST — settings test and voice transcripts both use this.
+    func postAgentHook(message: String, name: String) async throws {
+        let text = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else {
+            throw OpenClawError.emptyMessage
+        }
+
         let settings = OpenClawSettings.shared
         guard settings.isConfigured else {
             throw OpenClawError.notConfigured
         }
 
         let url = try settings.hooksAgentURL()
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(settings.hooksToken)", forHTTPHeaderField: "Authorization")
-        request.timeoutInterval = 30
+        let delivery = try settings.resolvedDeliveryTarget()
+        let agentId = settings.resolvedAgentId
 
         let body = AgentRequest(
             message: text,
-            name: "Forrest Voice #\(recordingId)",
-            agentId: settings.agentId,
+            name: name,
+            agentId: agentId,
             deliver: true,
-            wakeMode: "now"
+            wakeMode: "now",
+            channel: delivery?.channel,
+            to: delivery?.to
         )
+
+        try await postJSON(to: url, body: body, agentId: agentId, delivery: delivery)
+    }
+
+    private func postJSON(
+        to url: URL,
+        body: AgentRequest,
+        agentId: String,
+        delivery: (channel: String, to: String)?
+    ) async throws {
+        let settings = OpenClawSettings.shared
+        let token = settings.trimmedHooksToken
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue(token, forHTTPHeaderField: "x-openclaw-token")
+        request.timeoutInterval = 45
         request.httpBody = try JSONEncoder().encode(body)
 
-        AppLog.shared.log("openclaw", "POST \(url.absoluteString)")
-        AppLog.shared.log("openclaw", "agentId=\(settings.agentId) deliver=true selfSigned=\(settings.allowSelfSignedCertificate)")
-        AppLog.shared.log("openclaw", "message=\(text.prefix(120))")
+        let deliveryLog = delivery.map { "\($0.channel) → \($0.to)" } ?? "default"
+        let bodyLog = String(data: request.httpBody ?? Data(), encoding: .utf8) ?? "?"
+        AppLog.shared.log("openclaw", "POST agent \(url.absoluteString)")
+        AppLog.shared.log("openclaw", "body=\(bodyLog.prefix(400))")
+        AppLog.shared.log("openclaw", "agentId=\(agentId) delivery=\(deliveryLog)")
 
         let session = OpenClawURLSession.session()
         let data: Data
@@ -56,10 +100,13 @@ final class OpenClawService {
         }
 
         let responseBody = String(data: data, encoding: .utf8) ?? ""
-        AppLog.shared.log("openclaw", "HTTP \(http.statusCode) \(responseBody.prefix(200))")
+        AppLog.shared.log("openclaw", "HTTP \(http.statusCode) \(responseBody.prefix(300))")
 
-        // 202 = async agent run started (expected)
         guard (200 ... 299).contains(http.statusCode) else {
+            if http.statusCode == 429 {
+                let retry = http.value(forHTTPHeaderField: "Retry-After") ?? "?"
+                throw OpenClawError.badResponse(http.statusCode, "Rate limited — retry after \(retry)s. \(responseBody.prefix(200))")
+            }
             throw OpenClawError.badResponse(http.statusCode, responseBody.prefix(300).description)
         }
     }
@@ -67,15 +114,15 @@ final class OpenClawService {
     private static func describeNetworkError(_ error: URLError, host: String) -> String {
         switch error.code {
         case .cannotConnectToHost, .networkConnectionLost:
-            return "Cannot connect to \(host) — nothing listening? Check OpenClaw gateway is running and port is open."
+            return "Cannot connect to \(host) — is the gateway running and is the phone on the same network?"
         case .cannotFindHost, .dnsLookupFailed:
-            return "Cannot resolve \(host) — iPhone may not know this hostname (use IP or fix DNS)."
+            return "Cannot resolve \(host) — try the LAN IP instead of a hostname."
         case .timedOut:
-            return "Timed out connecting to \(host) — phone may be off Wi‑Fi or firewall blocking."
+            return "Timed out connecting to \(host) — phone may be off Wi‑Fi or the port blocked."
         case .secureConnectionFailed, .serverCertificateUntrusted:
             return "TLS failed for \(host) — enable “Allow self-signed HTTPS” or fix the certificate."
         case .appTransportSecurityRequiresSecureConnection:
-            return "ATS blocked HTTP — use https:// or update the app."
+            return "ATS blocked HTTP — use https:// in the gateway URL."
         default:
             return error.localizedDescription
         }

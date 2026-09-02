@@ -16,13 +16,17 @@ void batteryInit() {
   palaAdcReady = true;
 }
 
-float readBatteryVoltage() {
+static float readBatteryVoltageSamples(int samples) {
   if (!palaAdcReady) batteryInit();
-  const int samples = 16;
+  if (samples < 1) samples = 1;
   uint32_t sum = 0;
   for (int i = 0; i < samples; i++) { sum += analogReadMilliVolts(BAT_ADC_PIN); delay(2); }
   float mv = (float)sum / (float)samples;
   return (mv / 1000.0f) * 2.0f;
+}
+
+float readBatteryVoltage() {
+  return readBatteryVoltageSamples(16);
 }
 
 int batteryPercentFromVoltage(float v) {
@@ -42,8 +46,8 @@ int batteryPercentFromVoltage(float v) {
   return 100;
 }
 
-int readBatteryPercent() {
-  float v = readBatteryVoltage();
+int readBatteryPercent(int samples) {
+  float v = readBatteryVoltageSamples(samples);
   if (v <= 0.1f) return -1;
   return batteryPercentFromVoltage(v);
 }

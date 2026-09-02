@@ -33,7 +33,7 @@ static void drawHeaderBar() {
   fillRect(0, 0, W, 26, BLACK);
   drawStr(10, 8, "Forrest", 1, WHITE);
 
-  int batt = readBatteryPercent();
+  int batt = readBatteryPercent(4);
   bool charging = isBatteryCharging();
   gLastCharging = charging;
 
@@ -236,7 +236,7 @@ void bleVoiceUiTick() {
 
   static uint32_t lastCheckMs = 0;
   uint32_t now = millis();
-  if (now - lastCheckMs < 2000) return;
+  if (now - lastCheckMs < 10000) return;
   lastCheckMs = now;
 
   bool charging = isBatteryCharging();

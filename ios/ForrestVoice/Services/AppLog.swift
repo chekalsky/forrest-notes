@@ -42,10 +42,6 @@ final class AppLog: ObservableObject {
         }
     }
 
-    var logFilePath: String { fileURL.path }
-
-    var logFileURL: URL { fileURL }
-
     /// Snapshot for Share/AirDrop — prefers on-disk log, falls back to in-memory lines.
     func urlForSharing() -> URL {
         let stamp = ISO8601DateFormatter().string(from: Date())
@@ -64,5 +60,14 @@ final class AppLog: ObservableObject {
         let text = body.isEmpty ? "(no log entries yet)\n" : body + "\n"
         try? text.write(to: exportURL, atomically: true, encoding: .utf8)
         return exportURL
+    }
+
+    var logFilePath: String { fileURL.path }
+
+    var logFileURL: URL { fileURL }
+
+    func clear() {
+        lines.removeAll()
+        try? FileManager.default.removeItem(at: fileURL)
     }
 }

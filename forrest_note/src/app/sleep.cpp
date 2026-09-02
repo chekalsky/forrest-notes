@@ -1,4 +1,7 @@
 #include "Arduino.h"
+#include "esp_sleep.h"
+#include "esp_system.h"
+#include "driver/rtc_io.h"
 #include "../../config.h"
 #include "../../globals.h"
 #include "../../types.h"
@@ -10,11 +13,52 @@
 
 extern "C" {
 #include "../../src/audio/audio_bsp.h"
+#include "../../src/codec_board/codec_init.h"
 }
+
+#ifdef FORREST_BLE_VOICE
+#include "ble_voice.h"
+#endif
 
 void resetActivity() {
   lastActivityMs = millis();
 }
+
+static void enableButtonDeepSleepWake() {
+  const gpio_num_t wakePins[] = { GPIO_NUM_0, GPIO_NUM_18 };
+  for (gpio_num_t pin : wakePins) {
+    rtc_gpio_init(pin);
+    rtc_gpio_set_direction(pin, RTC_GPIO_MODE_INPUT_ONLY);
+    rtc_gpio_pullup_en(pin);
+    rtc_gpio_pulldown_dis(pin);
+  }
+  uint64_t wakeMask = (1ULL << BTN_REC) | (1ULL << BTN_PWR);
+  esp_sleep_enable_ext1_wakeup(wakeMask, ESP_EXT1_WAKEUP_ANY_LOW);
+}
+
+#ifdef FORREST_BLE_VOICE
+void enterBleVoiceSleep() {
+  Serial.println("[BLE] enter deep sleep");
+  bleVoiceTeardown();
+
+  audio_record_close();
+  deinit_codec();
+
+  showUltraSleepScreen();
+  delay(120);
+
+  if (display) display->EPD_Sleep();
+  board.POWEER_Audio_OFF();
+  board.POWEER_EPD_OFF();
+
+  board.VBAT_POWER_ON();
+
+  enableButtonDeepSleepWake();
+
+  delay(50);
+  esp_deep_sleep_start();
+}
+#endif
 
 void enterUltraSleep() {
   showUltraSleepScreen();   // final image; refresh completes (read_busy) before we continue
@@ -38,8 +82,7 @@ void enterUltraSleep() {
   // us on a button press.
   board.VBAT_POWER_ON();
 
-  uint64_t wakeMask = (1ULL << BTN_REC) | (1ULL << BTN_PWR);
-  esp_sleep_enable_ext1_wakeup(wakeMask, ESP_EXT1_WAKEUP_ANY_LOW);
+  enableButtonDeepSleepWake();
 
   delay(50);
   esp_deep_sleep_start();

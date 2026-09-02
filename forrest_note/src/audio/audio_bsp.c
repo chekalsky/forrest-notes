@@ -9,6 +9,7 @@
 
 static esp_codec_dev_handle_t playback = NULL;
 static esp_codec_dev_handle_t record   = NULL;
+static bool gRecordOpen = false;
 
 void audio_bsp_init(void)
 {
@@ -35,6 +36,30 @@ void audio_play_init(void)
     };
     esp_codec_dev_open(playback, &fs);
     esp_codec_dev_open(record, &fs);
+    gRecordOpen = true;
+}
+
+void audio_record_open(void)
+{
+    if (!record) {
+        audio_bsp_init();
+    }
+    if (gRecordOpen) return;
+    esp_codec_dev_set_in_gain(record, MIC_GAIN_DB);
+    esp_codec_dev_sample_info_t fs = {
+        .sample_rate    = SAMPLE_RATE,
+        .channel        = 2,
+        .bits_per_sample = 16,
+    };
+    esp_codec_dev_open(record, &fs);
+    gRecordOpen = true;
+}
+
+void audio_record_close(void)
+{
+    if (!gRecordOpen || !record) return;
+    esp_codec_dev_close(record);
+    gRecordOpen = false;
 }
 
 void audio_playback_set_vol(uint8_t vol)

@@ -87,6 +87,20 @@ final class RecordingStore {
         return decoded
     }
 
+    func deleteAll() throws {
+        let fm = FileManager.default
+        let dir = Self.recordingsDirectory
+        if fm.fileExists(atPath: dir.path) {
+            let contents = try fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)
+            for url in contents {
+                try fm.removeItem(at: url)
+            }
+        } else {
+            try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
+        try saveIndex([])
+    }
+
     private func saveIndex(_ items: [SavedRecording]) throws {
         let data = try JSONEncoder().encode(items)
         try data.write(to: indexURL, options: .atomic)

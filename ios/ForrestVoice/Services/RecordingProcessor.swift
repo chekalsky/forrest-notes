@@ -34,13 +34,13 @@ final class RecordingProcessor {
             try store.saveTranscript(recordingId: recordingId, text: transcript)
             AppLog.shared.log("store", "Saved transcript for id=\(recordingId)")
 
+            await forwardToOpenClaw(transcript: transcript, recordingId: recordingId)
+
             await NotificationService.shared.notifyTranscription(
                 text: transcript,
                 recordingId: recordingId
             )
             AppLog.shared.log("notify", "Sent transcription notification id=\(recordingId)")
-
-            await forwardToOpenClaw(transcript: transcript, recordingId: recordingId)
         } catch {
             let elapsed = Date().timeIntervalSince(started)
             AppLog.shared.log("speech", "Failed after \(String(format: "%.1f", elapsed))s: \(error.localizedDescription)")
@@ -64,7 +64,10 @@ final class RecordingProcessor {
         }
 
         do {
-            try await OpenClawService.shared.sendTranscript(transcript, recordingId: recordingId)
+            try await OpenClawService.shared.postAgentHook(
+                message: transcript,
+                name: "Forrest Voice #\(recordingId)"
+            )
             try store.saveOpenClawStatus(recordingId: recordingId, status: "Sent to OpenClaw")
             AppLog.shared.log("openclaw", "Dispatched id=\(recordingId)")
         } catch {

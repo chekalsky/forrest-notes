@@ -7,6 +7,8 @@ extern "C" {
 
 void audio_bsp_init(void);
 void audio_play_init(void);
+void audio_record_open(void);
+void audio_record_close(void);
 void audio_playback_set_vol(uint8_t vol);
 void audio_playback_read(void *data_ptr, uint32_t len);
 void audio_playback_write(void *data_ptr, uint32_t len);

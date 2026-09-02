@@ -26,9 +26,9 @@ struct ContentView: View {
                             Text("\(bluetooth.devicePendingCount)")
                         }
                     }
-                    if let lastPing = bluetooth.lastDevicePing {
-                        LabeledContent("Last ping") {
-                            Text(lastPing, style: .relative)
+                    if let lastStatus = bluetooth.lastDeviceStatus {
+                        LabeledContent("Last status") {
+                            Text(lastStatus, style: .relative)
                                 .foregroundStyle(.secondary)
                         }
                     }

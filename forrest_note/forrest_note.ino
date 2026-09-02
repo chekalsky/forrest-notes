@@ -4,6 +4,8 @@
 #include <DNSServer.h>
 #include <vector>
 #include "driver/i2c_master.h"
+#include "esp_sleep.h"
+#include "esp_system.h"
 
 extern "C" {
 #include "config.h"
@@ -101,7 +103,15 @@ void setup() {
 
   board.VBAT_POWER_ON();
 
-  wokeFromUltraSleep  = (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_EXT1);
+  esp_reset_reason_t resetReason = esp_reset_reason();
+  esp_sleep_wakeup_cause_t wakeCause = esp_sleep_get_wakeup_cause();
+  uint64_t ext1Pins = 0;
+  if (wakeCause == ESP_SLEEP_WAKEUP_EXT1) {
+    ext1Pins = esp_sleep_get_ext1_wakeup_status();
+  }
+  wokeFromUltraSleep = (resetReason == ESP_RST_DEEPSLEEP)
+      || (wakeCause == ESP_SLEEP_WAKEUP_EXT1)
+      || (ext1Pins != 0);
   delay(50);
 
   wakeToMenuRequested = (wokeFromUltraSleep && digitalRead(BTN_PWR) == LOW);
@@ -112,7 +122,9 @@ void setup() {
   delay(20);
 
   board.POWEER_EPD_ON();
+#ifndef FORREST_BLE_VOICE
   board.POWEER_Audio_ON();
+#endif
   delay(200);
 
   custom_lcd_spi_t dispCfg = {};
@@ -131,11 +143,24 @@ void setup() {
   display->EPD_DisplayPartBaseImage();
   display->EPD_Init_Partial();
 
+#ifdef FORREST_BLE_VOICE
+  bool bleWakeRequested = wokeFromUltraSleep
+      || digitalRead(BTN_REC) == LOW
+      || digitalRead(BTN_PWR) == LOW;
+
+  if (!bleWakeRequested) {
+    Serial.println("[BLE] cold boot — entering deep sleep");
+    enterBleVoiceSleep();
+  }
+#endif
+
   i2c_master_Init();
   delay(50);
 
+#ifndef FORREST_BLE_VOICE
   audio_bsp_init();
   audio_play_init();
+#endif
 
   SD_MMC.setPins(SD_CLK, SD_CMD, SD_D0);
   if (!SD_MMC.begin("/sdcard", true)) {
@@ -145,7 +170,7 @@ void setup() {
 
 #ifdef FORREST_BLE_VOICE
   Serial.println("=== BLE Voice mode (hold REC, release to send) ===");
-  bleVoiceSetup();
+  bleVoiceEnterAwake();
 #else
   if (!SD_MMC.exists(NOTES_DIR)) SD_MMC.mkdir(NOTES_DIR);
   speakersEnsureDir();

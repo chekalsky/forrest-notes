@@ -18,6 +18,8 @@ final class DeviceSession: NSObject {
     var onLog: ((String) -> Void)?
     var onRecordingReceived: ((URL, UInt16) -> Void)?
 
+    private var sentRetryPending = false
+
     init(peripheral: CBPeripheral, transferManager: AudioTransferManager) {
         self.peripheral = peripheral
         self.transferManager = transferManager
@@ -137,10 +139,11 @@ extension DeviceSession: CBPeripheralDelegate {
 
         if characteristic.uuid == ForrestVoiceProtocol.deviceStatusUUID {
             guard let payload = DeviceStatusPayload.parse(data) else { return }
-            if payload.pendingCount > 0, payload.state != .transferring {
-                ackSender.sendRetryPending()
-            }
             Task { @MainActor in
+                if payload.pendingCount > 0, payload.state != .transferring, !sentRetryPending {
+                    sentRetryPending = true
+                    ackSender.sendRetryPending()
+                }
                 onStatusUpdate?(payload)
             }
             return

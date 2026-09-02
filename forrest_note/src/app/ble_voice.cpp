@@ -13,14 +13,17 @@
 #include "freertos/task.h"
 
 #include "../../config.h"
+#include "../../globals.h"
 #include "forrest_voice_protocol.h"
 #include "wav_util.h"
 #include "ble_voice_ui.h"
 #include "ble_voice_queue.h"
 #include "battery.h"
+#include "sleep.h"
 
 extern "C" {
 #include "../../src/audio/audio_bsp.h"
+#include "../../src/codec_board/codec_init.h"
 }
 
 static BLECharacteristic* gStatusChar = nullptr;
@@ -31,30 +34,121 @@ static bool gDrainQueue = false;
 static uint16_t gRecordingId = 1;
 
 static bool gBtnWasDown = false;
+static bool gBleStackUp = false;
 
 static volatile bool gAckReceived = false;
 static volatile uint16_t gAckSeq = 0;
 
 static uint8_t gCurrentState = FV_STATE_IDLE;
-static uint8_t gPingSeq = 0;
-static uint32_t gLastPingMs = 0;
+static uint8_t gStatusSeq = 0;
 static uint8_t gRemoteBda[6] = {0};
 static bool gHasRemoteBda = false;
 
+static void bleTxLedOff();
+
+// ── Power management ────────────────────────────────────────────────────────
+
+void bleVoiceTouchActivity() {
+  lastActivityMs = millis();
+}
+
+bool bleVoiceCanSleep() {
+  if (gCurrentState == FV_STATE_TRANSFERRING ||
+      gCurrentState == FV_STATE_RECORDING ||
+      gCurrentState == FV_STATE_FINALIZING) {
+    return false;
+  }
+  if (digitalRead(BTN_REC) == LOW || digitalRead(BTN_PWR) == LOW) {
+    return false;
+  }
+  return (millis() - lastActivityMs) >= BLE_IDLE_SLEEP_MS;
+}
+
+void bleVoiceTeardown() {
+  if (!gBleStackUp) return;
+  bleTxLedOff();
+  BLEDevice::stopAdvertising();
+  BLEDevice::deinit(false);
+  gBleStackUp = false;
+  gStatusChar = nullptr;
+  gMetaChar = nullptr;
+  gAudioChar = nullptr;
+  gDeviceConnected = false;
+  gHasRemoteBda = false;
+  gDrainQueue = false;
+}
+
+void bleVoiceEnterAwake() {
+  bleVoiceTouchActivity();
+  bleVoiceSetup();
+}
+
 // ── BLE helpers ───────────────────────────────────────────────────────────
+
+#if BLE_TX_LED_PIN >= 0
+static void bleTxLedInit() {
+  pinMode(BLE_TX_LED_PIN, OUTPUT);
+  digitalWrite(BLE_TX_LED_PIN, HIGH);  // active LOW LED off
+}
+
+static void bleTxLedSet(bool on) {
+  digitalWrite(BLE_TX_LED_PIN, on ? LOW : HIGH);
+}
+
+static void bleTxLedOff() {
+  bleTxLedSet(false);
+}
+
+static void bleTxLedPulse(uint32_t now, uint32_t onMs, uint32_t offMs) {
+  uint32_t cycle = onMs + offMs;
+  bleTxLedSet((now % cycle) < onMs);
+}
+
+// Advertising / connected-idle / recording / transfer patterns — called from main loop.
+static void bleTxLedTick() {
+  uint32_t now = millis();
+
+  if (gCurrentState == FV_STATE_RECORDING) {
+    bleTxLedSet(true);
+    return;
+  }
+  if (gCurrentState == FV_STATE_TRANSFERRING) {
+    bleTxLedSet(((now / BLE_TX_LED_XFER_MS) & 1UL) == 0UL);
+    return;
+  }
+  if (gDeviceConnected) {
+    bleTxLedPulse(now, BLE_TX_LED_CONN_ON_MS, BLE_TX_LED_CONN_OFF_MS);
+    return;
+  }
+  if (gBleStackUp) {
+    bleTxLedPulse(now, BLE_TX_LED_ADV_ON_MS, BLE_TX_LED_ADV_OFF_MS);
+    return;
+  }
+  bleTxLedSet(false);
+}
+#else
+static void bleTxLedInit() {}
+static void bleTxLedOff() {}
+static void bleTxLedTick() {}
+#endif
+
+static void bleCharNotify(BLECharacteristic* ch) {
+  if (!ch) return;
+  ch->notify();
+}
 
 static void notifyStatus(uint8_t state) {
   if (!gStatusChar) return;
   gCurrentState = state;
-  int batt = readBatteryPercent();
+  int batt = readBatteryPercent(4);
   uint8_t payload[4] = {
       state,
       (uint8_t)(batt < 0 ? 255 : (batt > 100 ? 100 : batt)),
       (uint8_t)bleQueueCount(),
-      gPingSeq++,
+      gStatusSeq++,
   };
   gStatusChar->setValue(payload, sizeof(payload));
-  gStatusChar->notify();
+  bleCharNotify(gStatusChar);
 }
 
 static uint16_t bleChunkPayloadMax() {
@@ -64,17 +158,6 @@ static uint16_t bleChunkPayloadMax() {
   return n > BLE_CHUNK_MAX ? BLE_CHUNK_MAX : n;
 }
 
-static void requestIdleBleConnection() {
-  if (!gHasRemoteBda) return;
-  esp_ble_conn_update_params_t params = {};
-  memcpy(params.bda, gRemoteBda, sizeof(params.bda));
-  params.min_int = 0x0050;  // 100 ms
-  params.max_int = 0x00A0;  // 200 ms
-  params.latency = 4;       // peripheral may skip connection events
-  params.timeout = 400;
-  esp_ble_gap_update_conn_params(&params);
-}
-
 static void requestTransferBleConnection() {
   if (!gHasRemoteBda) return;
   esp_ble_conn_update_params_t params = {};
@@ -82,7 +165,7 @@ static void requestTransferBleConnection() {
   params.min_int = 0x000C;  // 15 ms
   params.max_int = 0x0020;  // 40 ms
   params.latency = 0;
-  params.timeout = 400;
+  params.timeout = 600;
   esp_ble_gap_update_conn_params(&params);
 }
 
@@ -127,7 +210,9 @@ static bool sendWavFile(const char* path) {
 
   bleVoiceUiSetState(BLE_UI_SENDING);
   notifyStatus(FV_STATE_TRANSFERRING);
+  bleVoiceTouchActivity();
 
+  BLEDevice::setPower(ESP_PWR_LVL_P9);
   requestTransferBleConnection();
   delay(BLE_XFER_CONN_SETTLE_MS);
 
@@ -145,7 +230,7 @@ static bool sendWavFile(const char* path) {
   meta[10] = 1;
   meta[11] = 16;
   gMetaChar->setValue(meta, sizeof(meta));
-  gMetaChar->notify();
+  bleCharNotify(gMetaChar);
   delay(50);
 
   const uint16_t payloadMax = bleChunkPayloadMax();
@@ -156,6 +241,7 @@ static bool sendWavFile(const char* path) {
     if (packet) free(packet);
     f.close();
     bleVoiceUiSetState(BLE_UI_ERROR, "No memory");
+    BLEDevice::setPower(ESP_PWR_LVL_P6);
     return false;
   }
 
@@ -183,7 +269,7 @@ static bool sendWavFile(const char* path) {
     memcpy(packet + 8, readBuf, payloadLen);
 
     gAudioChar->setValue(packet, 8 + payloadLen);
-    gAudioChar->notify();
+    bleCharNotify(gAudioChar);
 
     sent += payloadLen;
 
@@ -209,7 +295,7 @@ static bool sendWavFile(const char* path) {
   free(packet);
   f.close();
 
-  requestIdleBleConnection();
+  BLEDevice::setPower(ESP_PWR_LVL_P6);
 
   if (!ok || sent < totalBytes) {
     notifyStatus(FV_STATE_ERROR);
@@ -240,10 +326,10 @@ class BleServerCallbacks : public BLEServerCallbacks {
     if (param) {
       memcpy(gRemoteBda, param->connect.remote_bda, sizeof(gRemoteBda));
       gHasRemoteBda = true;
-      requestIdleBleConnection();
+      // Let iOS settle its connection params before we touch them.
     }
-    gLastPingMs = millis();
     notifyStatus(FV_STATE_IDLE);
+    bleVoiceTouchActivity();
     if (bleQueueCount() > 0) {
       gDrainQueue = true;
       Serial.printf("[BLE] %d queued — will drain\n", bleQueueCount());
@@ -255,6 +341,11 @@ class BleServerCallbacks : public BLEServerCallbacks {
     gHasRemoteBda = false;
     Serial.println("[BLE] disconnected");
     bleVoiceUiSetPhoneConnected(false);
+    BLEAdvertising* adv = BLEDevice::getAdvertising();
+    adv->setMinInterval(BLE_ADV_INTERVAL_MIN);
+    adv->setMaxInterval(BLE_ADV_INTERVAL_MAX);
+    adv->setMinPreferred(0x06);
+    adv->setMaxPreferred(0x12);
     BLEDevice::startAdvertising();
   }
 };
@@ -283,9 +374,10 @@ class BleControlCallbacks : public BLECharacteristicCallbacks {
 };
 
 static void setupBle() {
+  if (gBleStackUp) return;
   BLEDevice::init("Forrest-Voice");
   BLEDevice::setMTU(517);
-  BLEDevice::setPower(ESP_PWR_LVL_P9);
+  BLEDevice::setPower(ESP_PWR_LVL_P6);
   BLEServer* server = BLEDevice::createServer();
   server->setCallbacks(new BleServerCallbacks());
 
@@ -328,7 +420,12 @@ static void setupBle() {
   BLEAdvertising* adv = BLEDevice::getAdvertising();
   adv->addServiceUUID(FV_SVC_UUID);
   adv->setScanResponse(true);
+  adv->setMinPreferred(0x06);
+  adv->setMaxPreferred(0x12);
+  adv->setMinInterval(BLE_ADV_INTERVAL_MIN);
+  adv->setMaxInterval(BLE_ADV_INTERVAL_MAX);
   BLEDevice::startAdvertising();
+  gBleStackUp = true;
   Serial.println("[BLE] advertising Forrest-Voice");
 }
 
@@ -370,12 +467,26 @@ static bool recButtonStillHeld() {
   return upSamples < 5;
 }
 
+static void beginRecordingAudio() {
+  board.POWEER_Audio_ON();
+  delay(20);
+  audio_record_open();
+}
+
+static void endRecordingAudio() {
+  audio_record_close();
+  board.POWEER_Audio_OFF();
+}
+
 static bool recordHoldToFile(const char* path) {
+  beginRecordingAudio();
+
   notifyStatus(FV_STATE_RECORDING);
   bleVoiceUiSetState(BLE_UI_LISTENING);
 
   File f = SD_MMC.open(path, FILE_WRITE);
   if (!f) {
+    endRecordingAudio();
     bleVoiceUiSetState(BLE_UI_ERROR, "SD write fail");
     delay(1200);
     bleVoiceUiSetState(BLE_UI_READY);
@@ -390,6 +501,7 @@ static bool recordHoldToFile(const char* path) {
   ctx.ring = xRingbufferCreateWithCaps(REC_RING_LEN, RINGBUF_TYPE_BYTEBUF, MALLOC_CAP_SPIRAM);
   if (!ctx.ring) {
     f.close();
+    endRecordingAudio();
     bleVoiceUiSetState(BLE_UI_ERROR, "No memory");
     delay(1200);
     bleVoiceUiSetState(BLE_UI_READY);
@@ -402,6 +514,7 @@ static bool recordHoldToFile(const char* path) {
   if (xTaskCreatePinnedToCore(recProducerTask, "recprod", 4096, &ctx, 6, &producer, 0) != pdPASS) {
     vRingbufferDeleteWithCaps(ctx.ring);
     f.close();
+    endRecordingAudio();
     bleVoiceUiSetState(BLE_UI_ERROR, "Rec start fail");
     delay(1200);
     bleVoiceUiSetState(BLE_UI_READY);
@@ -435,9 +548,8 @@ static bool recordHoldToFile(const char* path) {
   while (writeOk && (millis() - t0 < MAX_REC_MS)) {
     drain(pdMS_TO_TICKS(40));
 
-    uint32_t elapsed = millis() - t0;
-    // Match record.cpp: keep going while held, or until min hold time elapses.
-    if (elapsed >= BLE_MIN_REC_MS && !recButtonStillHeld()) break;
+    // Stop as soon as the button is released — short taps must not be padded to min duration.
+    if (!recButtonStillHeld()) break;
 
     if (millis() - lastFlush >= REC_FLUSH_MS) {
       lastFlush = millis();
@@ -446,7 +558,7 @@ static bool recordHoldToFile(const char* path) {
       f.flush();
       f.seek(44 + totalMono);
     }
-    if (millis() - lastUi >= 200) {
+    if (millis() - lastUi >= 400) {
       lastUi = millis();
       int lvl = (int)((long)recPeak * 152L * 3L / 32767L);
       if (lvl > 152) lvl = 152;
@@ -462,10 +574,13 @@ static bool recordHoldToFile(const char* path) {
   vRingbufferDeleteWithCaps(ctx.ring);
   writePcmWavHeader(f, totalMono);
   f.close();
+  endRecordingAudio();
 
-  if (wavPcmTooShort(totalMono)) {
+  uint32_t recMs = millis() - t0;
+  if (wavPcmTooShort(totalMono) || recMs < BLE_MIN_REC_MS) {
     SD_MMC.remove(path);
-    Serial.printf("[BLE] discarded (< %lums)\n", BLE_MIN_REC_MS);
+    Serial.printf("[BLE] discarded (%lums, %lu PCM bytes)\n",
+                  (unsigned long)recMs, (unsigned long)totalMono);
     bleVoiceUiSetState(BLE_UI_ERROR, "Too short");
     delay(1200);
     bleVoiceUiSetState(BLE_UI_READY);
@@ -473,6 +588,7 @@ static bool recordHoldToFile(const char* path) {
   }
 
   Serial.printf("[BLE] recorded %lu PCM bytes\n", (unsigned long)totalMono);
+  bleVoiceTouchActivity();
   return writeOk;
 }
 
@@ -493,24 +609,6 @@ static void queueAfterRecord(const char* path) {
     bleVoiceUiSetState(BLE_UI_READY);
     notifyStatus(FV_STATE_WAITING);
   }
-}
-
-static void tickKeepalive() {
-  if (!gDeviceConnected) return;
-  if (gCurrentState == FV_STATE_RECORDING || gCurrentState == FV_STATE_TRANSFERRING ||
-      gCurrentState == FV_STATE_FINALIZING) {
-    return;
-  }
-
-  uint32_t interval = bleQueueCount() > 0 ? BLE_PING_QUEUE_MS : BLE_PING_IDLE_MS;
-  uint32_t now = millis();
-  if (now - gLastPingMs < interval) return;
-
-  gLastPingMs = now;
-  uint8_t state = bleQueueCount() > 0 ? FV_STATE_WAITING : FV_STATE_IDLE;
-  notifyStatus(state);
-  Serial.printf("[BLE] keepalive state=%u queue=%d seq=%u\n",
-                state, bleQueueCount(), gPingSeq - 1);
 }
 
 static void tryDrainQueue() {
@@ -551,6 +649,7 @@ static void tryDrainQueue() {
 // ── Public API ──────────────────────────────────────────────────────────────
 
 void bleVoiceSetup() {
+  bleTxLedInit();
   setupBle();
   bleVoiceUiInit();
   bleQueueEnsureDir();
@@ -563,6 +662,7 @@ void bleVoiceHandleButton() {
 
   // Hold-to-record: block until release (debounced inside recordHoldToFile).
   if (!gBtnWasDown && down) {
+    bleVoiceTouchActivity();
     gDrainQueue = false;
     char recPath[64];
     if (!bleQueueAllocPath(recPath, sizeof(recPath))) {
@@ -587,10 +687,14 @@ void bleVoiceHandleButton() {
 
 void bleVoiceLoop() {
   bleVoiceUiTick();
+  bleTxLedTick();
   bleVoiceHandleButton();
-  tickKeepalive();
   tryDrainQueue();
-  delay(10);
+  if (bleVoiceCanSleep()) {
+    enterBleVoiceSleep();
+  }
+  uint32_t sleepMs = gCurrentState == FV_STATE_IDLE ? BLE_LOOP_SLEEP_MS : BLE_LOOP_SLEEP_BUSY_MS;
+  delay(sleepMs);
 }
 
 #endif  // FORREST_BLE_VOICE

@@ -29,7 +29,7 @@ struct DeviceStatusPayload {
     let state: DeviceState
     let batteryPercent: Int?
     let pendingCount: Int
-    let pingSeq: UInt8
+    let statusSeq: UInt8
 
     static func parse(_ data: Data) -> DeviceStatusPayload? {
         guard data.count >= 4, let state = DeviceState(rawValue: data[0]) else { return nil }
@@ -39,7 +39,7 @@ struct DeviceStatusPayload {
             state: state,
             batteryPercent: batteryPercent,
             pendingCount: Int(data[2]),
-            pingSeq: data[3]
+            statusSeq: data[3]
         )
     }
 }

@@ -6,6 +6,10 @@
 
 void bleVoiceSetup();
 void bleVoiceLoop();
+void bleVoiceEnterAwake();
+void bleVoiceTouchActivity();
+bool bleVoiceCanSleep();
+void bleVoiceTeardown();
 
 // Record while REC held; on release finalize WAV and queue BLE transfer.
 void bleVoiceHandleButton();

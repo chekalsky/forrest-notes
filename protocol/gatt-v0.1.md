@@ -28,7 +28,7 @@ Protocol version read value: `0x0001` (little-endian uint16).
 [0] state enum (see below)
 [1] battery percent (0–100, 255 = unknown)
 [2] pending recording count
-[3] pingSeq (increments each status notify; use for keepalive detection)
+[3] statusSeq (increments each status notify; not periodic)
 ```
 
 State enum: `0=idle 1=recording 2=finalizing 3=transferring 4=waiting 5=success 6=error`
