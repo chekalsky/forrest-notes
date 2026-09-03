@@ -33,8 +33,9 @@ static void drawHeaderBar() {
   fillRect(0, 0, W, 26, BLACK);
   drawStr(10, 8, "Forrest", 1, WHITE);
 
-  int batt = readBatteryPercent(4);
-  bool charging = isBatteryCharging();
+  float v = readBatteryVoltage(12);
+  int batt = (v <= 0.1f) ? -1 : batteryPercentFromVoltage(v);
+  bool charging = isBatteryChargingAt(v);
   gLastCharging = charging;
 
   char b[8];
@@ -235,12 +236,20 @@ void bleVoiceUiTick() {
   if (gUiState != BLE_UI_READY) return;
 
   static uint32_t lastCheckMs = 0;
+  static int lastBatt = -1;
   uint32_t now = millis();
-  if (now - lastCheckMs < 10000) return;
+  if (now - lastCheckMs < 5000) return;
   lastCheckMs = now;
 
-  bool charging = isBatteryCharging();
-  if (charging != gLastCharging) paintScreen();
+  float v = readBatteryVoltage(12);
+  int batt = (v <= 0.1f) ? -1 : batteryPercentFromVoltage(v);
+  bool charging = isBatteryChargingAt(v);
+
+  if (charging != gLastCharging || batt != lastBatt) {
+    gLastCharging = charging;
+    lastBatt = batt;
+    paintScreen();
+  }
 }
 
 #endif
