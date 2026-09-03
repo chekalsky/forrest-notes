@@ -6,4 +6,11 @@
 
 void resetActivity();
 void enterUltraSleep();
+#ifdef FORREST_BLE_VOICE
 void enterBleVoiceSleep();
+// RTC latch: survives USB re-enumeration after deep-sleep wake so we don't
+// immediately re-sleep when the wake button has already been released.
+bool bleVoiceWakeLatchGet();
+void bleVoiceWakeLatchSet();
+void bleVoiceWakeLatchClear();
+#endif

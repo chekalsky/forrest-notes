@@ -109,9 +109,18 @@ void setup() {
   if (wakeCause == ESP_SLEEP_WAKEUP_EXT1) {
     ext1Pins = esp_sleep_get_ext1_wakeup_status();
   }
+  bool btnWakeHeld = digitalRead(BTN_REC) == LOW || digitalRead(BTN_PWR) == LOW;
   wokeFromUltraSleep = (resetReason == ESP_RST_DEEPSLEEP)
       || (wakeCause == ESP_SLEEP_WAKEUP_EXT1)
       || (ext1Pins != 0);
+#ifdef FORREST_BLE_VOICE
+  // Latch ASAP: USB re-enumeration often resets mid-setup after deep-sleep wake.
+  // RTC latch survives that reset; button may already be released by then.
+  if (wokeFromUltraSleep || btnWakeHeld || bleVoiceWakeLatchGet()) {
+    bleVoiceWakeLatchSet();
+    wokeFromUltraSleep = true;
+  }
+#endif
   delay(50);
 
   wakeToMenuRequested = (wokeFromUltraSleep && digitalRead(BTN_PWR) == LOW);
@@ -144,7 +153,7 @@ void setup() {
   display->EPD_Init_Partial();
 
 #ifdef FORREST_BLE_VOICE
-  bool bleWakeRequested = wokeFromUltraSleep
+  bool bleWakeRequested = bleVoiceWakeLatchGet()
       || digitalRead(BTN_REC) == LOW
       || digitalRead(BTN_PWR) == LOW;
 

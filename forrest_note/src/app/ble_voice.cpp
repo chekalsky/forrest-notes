@@ -80,6 +80,8 @@ void bleVoiceTeardown() {
 
 void bleVoiceEnterAwake() {
   bleVoiceTouchActivity();
+  // Wake button often still held — don't treat that as "start recording".
+  gBtnWasDown = (digitalRead(BTN_REC) == LOW);
   bleVoiceSetup();
 }
 

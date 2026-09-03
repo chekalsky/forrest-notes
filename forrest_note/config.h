@@ -113,10 +113,10 @@
 #define BLE_LOOP_SLEEP_MS      50UL
 #define BLE_LOOP_SLEEP_BUSY_MS 10UL
 #define BLE_TX_LED_PIN         3         // Waveshare user LED (active LOW); -1 = off
-#define BLE_TX_LED_ADV_ON_MS   100UL     // advertising: 100 ms on, 400 ms off (1 Hz)
-#define BLE_TX_LED_ADV_OFF_MS  400UL
-#define BLE_TX_LED_CONN_ON_MS  500UL     // connected idle: 500 ms on, 1500 ms off
-#define BLE_TX_LED_CONN_OFF_MS 1500UL
+#define BLE_TX_LED_ADV_ON_MS   300UL     // advertising: 300 ms on, 2700 ms off
+#define BLE_TX_LED_ADV_OFF_MS  2700UL
+#define BLE_TX_LED_CONN_ON_MS  500UL     // connected idle: 500 ms on, 9500 ms off
+#define BLE_TX_LED_CONN_OFF_MS 9500UL
 #define BLE_TX_LED_XFER_MS     125UL     // transfer blink half-period
 
 #endif // CONFIG_H

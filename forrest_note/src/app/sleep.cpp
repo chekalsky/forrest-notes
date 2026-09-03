@@ -37,8 +37,25 @@ static void enableButtonDeepSleepWake() {
 }
 
 #ifdef FORREST_BLE_VOICE
+// Survives deep-sleep wake → USB reset (RTC memory). Cleared only on intentional sleep.
+static RTC_DATA_ATTR uint32_t gBleWakeLatch = 0;
+static constexpr uint32_t kBleWakeLatchMagic = 0xB1E5A7A1u;
+
+bool bleVoiceWakeLatchGet() {
+  return gBleWakeLatch == kBleWakeLatchMagic;
+}
+
+void bleVoiceWakeLatchSet() {
+  gBleWakeLatch = kBleWakeLatchMagic;
+}
+
+void bleVoiceWakeLatchClear() {
+  gBleWakeLatch = 0;
+}
+
 void enterBleVoiceSleep() {
   Serial.println("[BLE] enter deep sleep");
+  bleVoiceWakeLatchClear();
   bleVoiceTeardown();
 
   audio_record_close();
