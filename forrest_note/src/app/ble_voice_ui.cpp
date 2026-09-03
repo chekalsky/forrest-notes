@@ -16,8 +16,15 @@ static int gQueueCount = 0;
 
 static int gRecLevelSmoothed = 0;
 static int gRecDrawnR = -1;
-static bool gRecBlinkOn = true;
+static uint32_t gRecDrawnSec = UINT32_MAX;
+static bool gRecMinOk = false;
+static uint32_t gRecLastTimerDrawMs = 0;
 static bool gLastCharging = false;
+
+// Listening layout — full screen, no header/footer
+static constexpr int kListenCy = 92;
+static constexpr int kListenRx = 100;
+static constexpr int kListenTimerY = 168;
 
 static void drawBoltWhite(int x, int y) {
   fillTriangle(x + 7, y, x + 1, y + 9, x + 6, y + 9, WHITE);
@@ -69,10 +76,56 @@ static int levelRadius(int level) {
   if (n < 0) n = 0;
   if (n > 1) n = 1;
   n = n * n * (3.0f - 2.0f * n);
-  int r = 22 + (int)(n * 40.0f + 0.5f);
-  if (r < 20) r = 20;
-  if (r > 64) r = 64;
+  int r = 24 + (int)(n * 32.0f + 0.5f);
+  if (r < 22) r = 22;
+  if (r > 56) r = 56;
   return r;
+}
+
+static void resetListeningDrawState() {
+  gRecDrawnR = -1;
+  gRecDrawnSec = UINT32_MAX;
+  gRecMinOk = false;
+  gRecLastTimerDrawMs = 0;
+  gRecLevelSmoothed = 0;
+}
+
+static void drawListeningRing(int cx, int cy, int r, bool minOk) {
+  int thick = minOk ? 4 : 2;
+  strokeCircle(cx, cy, r, thick, WHITE);
+  if (minOk) fillCircle(cx, cy, 4, WHITE);
+}
+
+static void drawListeningTimer(uint32_t elapsedMs, bool minOk) {
+  uint32_t sec = elapsedMs / 1000UL;
+  char tbuf[8];
+  snprintf(tbuf, sizeof(tbuf), "%lu:%02lu",
+           (unsigned long)(sec / 60UL), (unsigned long)(sec % 60UL));
+  int scale = minOk ? 2 : 1;
+  drawStrC(kListenRx, kListenTimerY, tbuf, scale, WHITE);
+}
+
+static void paintListeningFull(int r, uint32_t elapsedMs, bool minOk) {
+  fillRect(0, 0, W, H, BLACK);
+  drawListeningRing(kListenRx, kListenCy, r, minOk);
+  drawListeningTimer(elapsedMs, minOk);
+  gRecDrawnR = r;
+  gRecDrawnSec = elapsedMs / 1000UL;
+  gRecMinOk = minOk;
+  gRecLastTimerDrawMs = elapsedMs;
+}
+
+static void refreshListeningRingBand(int oldR, int newR) {
+  int clearR = (oldR > newR ? oldR : newR) + 8;
+  int y0 = kListenCy - clearR;
+  int h = clearR * 2;
+  if (y0 < 0) y0 = 0;
+  if (y0 + h > kListenTimerY - 8) h = (kListenTimerY - 8) - y0;
+  fillRect(0, y0, W, h, BLACK);
+}
+
+static void refreshListeningTimerBand() {
+  fillRect(0, kListenTimerY - 10, W, H - (kListenTimerY - 10), BLACK);
 }
 
 static void drawCheck(int cx, int cy) {
@@ -99,10 +152,10 @@ static void drawQueueBadge() {
 
 static void paintScreen() {
   clearWhite();
-  drawHeaderBar();
 
   switch (gUiState) {
     case BLE_UI_READY:
+      drawHeaderBar();
       fillCircle(W / 2, 92, 28, BLACK);
       fillRect(W / 2 - 10, 92 - 36, 20, 32, WHITE);
       fillCircle(W / 2, 92 - 36, 10, WHITE);
@@ -114,22 +167,12 @@ static void paintScreen() {
       break;
 
     case BLE_UI_LISTENING:
-      fillRect(0, 26, W, H - 26, BLACK);
-      drawStrC(W / 2, 40, "Listening", 1, WHITE);
-      gRecDrawnR = -1;
-      gRecLevelSmoothed = 0;
-      {
-        int r0 = levelRadius(0);
-        gRecDrawnR = r0;
-        gRecBlinkOn = true;
-        fillCircle(W / 2, 100, r0, WHITE);
-        fillCircle(178, 38, 6, WHITE);
-        drawStrC(W / 2, 168, "0:00", 1, WHITE);
-      }
-      drawHint("release to send");
+      resetListeningDrawState();
+      paintListeningFull(levelRadius(0), 0, false);
       break;
 
     case BLE_UI_SENDING:
+      drawHeaderBar();
       drawStrC(W / 2, 52, "Sending", 2, BLACK);
       drawProgressBar(gSendPct);
       if (gDetail[0]) drawStrC(W / 2, 148, gDetail, 1, BLACK);
@@ -137,12 +180,14 @@ static void paintScreen() {
       break;
 
     case BLE_UI_DONE:
+      drawHeaderBar();
       drawCheck(W / 2, 88);
       drawStrC(W / 2, 138, gResult[0] ? gResult : "Sent", 2, BLACK);
       drawHint("");
       break;
 
     case BLE_UI_ERROR:
+      drawHeaderBar();
       strokeCircle(W / 2, 82, 32, 3, BLACK);
       line(W / 2 - 18, 64, W / 2 + 18, 100, BLACK);
       line(W / 2 + 18, 64, W / 2 - 18, 100, BLACK);
@@ -152,20 +197,6 @@ static void paintScreen() {
   }
 
   refresh();
-}
-
-static void drawListeningPartial(uint32_t elapsedMs, int radius, bool blink) {
-  fillRect(0, 50, W, 120, BLACK);
-  fillCircle(W / 2, 100, radius, WHITE);
-  if (blink) fillCircle(178, 38, 6, WHITE);
-  else strokeCircle(178, 38, 6, 2, WHITE);
-
-  uint32_t sec = elapsedMs / 1000UL;
-  char tbuf[8];
-  snprintf(tbuf, sizeof(tbuf), "%lu:%02lu",
-           (unsigned long)(sec / 60UL), (unsigned long)(sec % 60UL));
-  drawStrC(W / 2, 168, tbuf, 1, WHITE);
-  display->EPD_DisplayPartTrigger();
 }
 
 void bleVoiceUiInit() {
@@ -205,12 +236,32 @@ void bleVoiceUiUpdateListening(uint32_t elapsedMs, int level) {
   if (displayBusy()) return;
 
   int r = levelRadius(level);
-  bool blink = ((elapsedMs / 850UL) & 1UL) == 0UL;
-  if (r == gRecDrawnR && blink == gRecBlinkOn) return;
+  bool minOk = elapsedMs >= BLE_MIN_REC_MS;
+  uint32_t sec = elapsedMs / 1000UL;
 
-  gRecDrawnR = r;
-  gRecBlinkOn = blink;
-  drawListeningPartial(elapsedMs, r, blink);
+  bool needRing = (r != gRecDrawnR) || (minOk != gRecMinOk);
+  bool needTimer = (sec != gRecDrawnSec)
+      || (minOk != gRecMinOk)
+      || (elapsedMs - gRecLastTimerDrawMs >= 500);
+
+  if (!needRing && !needTimer) return;
+
+  if (needRing) {
+    int oldR = gRecDrawnR >= 0 ? gRecDrawnR : r;
+    refreshListeningRingBand(oldR, r);
+    drawListeningRing(kListenRx, kListenCy, r, minOk);
+    gRecDrawnR = r;
+  }
+
+  if (needTimer) {
+    refreshListeningTimerBand();
+    drawListeningTimer(elapsedMs, minOk);
+    gRecDrawnSec = sec;
+    gRecLastTimerDrawMs = elapsedMs;
+  }
+
+  gRecMinOk = minOk;
+  display->EPD_DisplayPartTrigger();
 }
 
 void bleVoiceUiSetSendProgress(int percent) {
