@@ -11,20 +11,23 @@ static BleVoiceUiState gUiState = BLE_UI_READY;
 static bool gPhoneConnected = false;
 static char gDetail[48] = "";
 static char gResult[41] = "";
-static int gSendPct = 0;
 static int gQueueCount = 0;
 
-static int gRecLevelSmoothed = 0;
-static int gRecDrawnR = -1;
+static int gSendDrawnDeg = -1;
+static char gSendDrawnSubtitle[32] = "";
+static uint32_t gSendLastDrawMs = 0;
+
+static bool gRecPulseOn = true;
 static uint32_t gRecDrawnSec = UINT32_MAX;
-static bool gRecMinOk = false;
 static uint32_t gRecLastTimerDrawMs = 0;
 static bool gLastCharging = false;
 
-// Listening layout — full screen, no header/footer
+// Listening / sending layout — full screen, no header/footer
 static constexpr int kListenCy = 92;
 static constexpr int kListenRx = 100;
 static constexpr int kListenTimerY = 168;
+static constexpr int kListenPulseR = 36;
+static constexpr int kSendRingR = 56;
 
 static void drawBoltWhite(int x, int y) {
   fillTriangle(x + 7, y, x + 1, y + 9, x + 6, y + 9, WHITE);
@@ -67,56 +70,35 @@ static void drawHint(const char* line) {
   drawStrC(W / 2, 186, line, 1, BLACK);
 }
 
-static int levelRadius(int level) {
-  int delta = level - gRecLevelSmoothed;
-  if (delta > 0) gRecLevelSmoothed += (delta + 1) / 2;
-  else gRecLevelSmoothed += delta / 5;
-
-  float n = (float)gRecLevelSmoothed / 152.0f;
-  if (n < 0) n = 0;
-  if (n > 1) n = 1;
-  n = n * n * (3.0f - 2.0f * n);
-  int r = 24 + (int)(n * 32.0f + 0.5f);
-  if (r < 22) r = 22;
-  if (r > 56) r = 56;
-  return r;
-}
-
 static void resetListeningDrawState() {
-  gRecDrawnR = -1;
+  gRecPulseOn = true;
   gRecDrawnSec = UINT32_MAX;
-  gRecMinOk = false;
   gRecLastTimerDrawMs = 0;
-  gRecLevelSmoothed = 0;
 }
 
-static void drawListeningRing(int cx, int cy, int r, bool minOk) {
-  int thick = minOk ? 4 : 2;
-  strokeCircle(cx, cy, r, thick, WHITE);
-  if (minOk) fillCircle(cx, cy, 4, WHITE);
+static void drawListeningPulse(bool on) {
+  if (on) fillCircle(kListenRx, kListenCy, kListenPulseR, WHITE);
 }
 
-static void drawListeningTimer(uint32_t elapsedMs, bool minOk) {
+static void drawListeningTimer(uint32_t elapsedMs) {
   uint32_t sec = elapsedMs / 1000UL;
   char tbuf[8];
   snprintf(tbuf, sizeof(tbuf), "%lu:%02lu",
            (unsigned long)(sec / 60UL), (unsigned long)(sec % 60UL));
-  int scale = minOk ? 2 : 1;
-  drawStrC(kListenRx, kListenTimerY, tbuf, scale, WHITE);
+  drawStrC(kListenRx, kListenTimerY, tbuf, 1, WHITE);
 }
 
-static void paintListeningFull(int r, uint32_t elapsedMs, bool minOk) {
+static void paintListeningFull(uint32_t elapsedMs) {
   fillRect(0, 0, W, H, BLACK);
-  drawListeningRing(kListenRx, kListenCy, r, minOk);
-  drawListeningTimer(elapsedMs, minOk);
-  gRecDrawnR = r;
+  drawListeningPulse(true);
+  drawListeningTimer(elapsedMs);
+  gRecPulseOn = true;
   gRecDrawnSec = elapsedMs / 1000UL;
-  gRecMinOk = minOk;
   gRecLastTimerDrawMs = elapsedMs;
 }
 
-static void refreshListeningRingBand(int oldR, int newR) {
-  int clearR = (oldR > newR ? oldR : newR) + 8;
+static void refreshListeningPulseBand() {
+  int clearR = kListenPulseR + 4;
   int y0 = kListenCy - clearR;
   int h = clearR * 2;
   if (y0 < 0) y0 = 0;
@@ -128,19 +110,82 @@ static void refreshListeningTimerBand() {
   fillRect(0, kListenTimerY - 10, W, H - (kListenTimerY - 10), BLACK);
 }
 
+static void resetSendingDrawState() {
+  gSendDrawnDeg = -1;
+  gSendDrawnSubtitle[0] = '\0';
+  gSendLastDrawMs = 0;
+}
+
+static void formatSendSubtitle(char* buf, size_t len,
+                               uint32_t sent, uint32_t total, uint32_t elapsedMs) {
+  unsigned sentKb = sent / 1024;
+  unsigned totalKb = (total + 1023) / 1024;
+  if (sent == 0 || total == 0) {
+    snprintf(buf, len, "0/%u KB · -- left", totalKb);
+    return;
+  }
+  if (sent >= total) {
+    snprintf(buf, len, "%u/%u KB · 0s left", sentKb, totalKb);
+    return;
+  }
+  uint32_t secLeft = 0;
+  if (elapsedMs > 0) {
+    uint64_t rem = (uint64_t)(total - sent) * elapsedMs / sent;
+    secLeft = (uint32_t)((rem + 999) / 1000);
+  }
+  snprintf(buf, len, "%u/%u KB · %lus left", sentKb, totalKb, (unsigned long)secLeft);
+}
+
+static void drawSendTrack(int cx, int cy, int r) {
+  strokeCircle(cx, cy, r, 2, WHITE);
+}
+
+static void drawSendArc(int cx, int cy, int r, int endDeg) {
+  if (endDeg <= 0) return;
+  if (endDeg > 360) endDeg = 360;
+  for (int deg = 0; deg <= endDeg; deg += 2)
+    drawThickArcDot(cx, cy, r, deg, 4, WHITE);
+}
+
+static void drawSendSubtitle(const char* text) {
+  drawStrC(kListenRx, kListenTimerY, text, 1, WHITE);
+}
+
+static void refreshSendRingBand() {
+  int clearR = kSendRingR + 8;
+  int y0 = kListenCy - clearR;
+  int h = clearR * 2;
+  if (y0 < 0) y0 = 0;
+  if (y0 + h > kListenTimerY - 8) h = (kListenTimerY - 8) - y0;
+  fillRect(0, y0, W, h, BLACK);
+}
+
+static void refreshSendTextBand() {
+  fillRect(0, kListenTimerY - 10, W, H - (kListenTimerY - 10), BLACK);
+}
+
+static void paintSendingFull(uint32_t sent, uint32_t total, uint32_t elapsedMs) {
+  char subtitle[32];
+  formatSendSubtitle(subtitle, sizeof(subtitle), sent, total, elapsedMs);
+  int endDeg = (total > 0) ? (int)((360ULL * sent) / total) : 0;
+
+  fillRect(0, 0, W, H, BLACK);
+  drawSendTrack(kListenRx, kListenCy, kSendRingR);
+  drawSendArc(kListenRx, kListenCy, kSendRingR, endDeg);
+  drawSendSubtitle(subtitle);
+
+  gSendDrawnDeg = endDeg;
+  strncpy(gSendDrawnSubtitle, subtitle, sizeof(gSendDrawnSubtitle) - 1);
+  gSendDrawnSubtitle[sizeof(gSendDrawnSubtitle) - 1] = '\0';
+  gSendLastDrawMs = elapsedMs;
+}
+
 static void drawCheck(int cx, int cy) {
   strokeCircle(cx, cy, 36, 3, BLACK);
   for (int t = -2; t <= 2; t++) {
     line(cx - 18, cy - 2 + t, cx - 4, cy + 14 + t, BLACK);
     line(cx - 4, cy + 14 + t, cx + 24, cy - 16 + t, BLACK);
   }
-}
-
-static void drawProgressBar(int pct) {
-  const int bx = 24, by = 118, bw = 152, bh = 14;
-  strokeRoundRect(bx, by, bw, bh, 4, 2, BLACK);
-  int fillW = (bw - 6) * constrain(pct, 0, 100) / 100;
-  if (fillW > 0) fillRoundRect(bx + 3, by + 3, fillW, bh - 6, 2, BLACK);
 }
 
 static void drawQueueBadge() {
@@ -168,31 +213,24 @@ static void paintScreen() {
 
     case BLE_UI_LISTENING:
       resetListeningDrawState();
-      paintListeningFull(levelRadius(0), 0, false);
+      paintListeningFull(0);
       break;
 
     case BLE_UI_SENDING:
-      drawHeaderBar();
-      drawStrC(W / 2, 52, "Sending", 2, BLACK);
-      drawProgressBar(gSendPct);
-      if (gDetail[0]) drawStrC(W / 2, 148, gDetail, 1, BLACK);
-      drawHint("");
+      resetSendingDrawState();
+      fillRect(0, 0, W, H, BLACK);
       break;
 
     case BLE_UI_DONE:
-      drawHeaderBar();
       drawCheck(W / 2, 88);
       drawStrC(W / 2, 138, gResult[0] ? gResult : "Sent", 2, BLACK);
-      drawHint("");
       break;
 
     case BLE_UI_ERROR:
-      drawHeaderBar();
       strokeCircle(W / 2, 82, 32, 3, BLACK);
       line(W / 2 - 18, 64, W / 2 + 18, 100, BLACK);
       line(W / 2 + 18, 64, W / 2 - 18, 100, BLACK);
       drawStrC(W / 2, 128, gDetail[0] ? gDetail : "Error", 1, BLACK);
-      drawHint("hold REC to retry");
       break;
   }
 
@@ -203,7 +241,7 @@ void bleVoiceUiInit() {
   gUiState = BLE_UI_READY;
   gPhoneConnected = false;
   gDetail[0] = gResult[0] = '\0';
-  gSendPct = 0;
+  resetSendingDrawState();
   paintScreen();
 }
 
@@ -228,51 +266,87 @@ void bleVoiceUiSetState(BleVoiceUiState state, const char* detail) {
     gDetail[sizeof(gDetail) - 1] = '\0';
   }
   if (state != BLE_UI_DONE) gResult[0] = '\0';
+  if (state == BLE_UI_SENDING) resetSendingDrawState();
   paintScreen();
 }
 
-void bleVoiceUiUpdateListening(uint32_t elapsedMs, int level) {
+void bleVoiceUiUpdateListening(uint32_t elapsedMs) {
   if (gUiState != BLE_UI_LISTENING) return;
   if (displayBusy()) return;
 
-  int r = levelRadius(level);
-  bool minOk = elapsedMs >= BLE_MIN_REC_MS;
+  bool pulseOn = ((elapsedMs / 850UL) & 1UL) == 0UL;
   uint32_t sec = elapsedMs / 1000UL;
 
-  bool needRing = (r != gRecDrawnR) || (minOk != gRecMinOk);
+  bool needPulse = pulseOn != gRecPulseOn;
   bool needTimer = (sec != gRecDrawnSec)
-      || (minOk != gRecMinOk)
       || (elapsedMs - gRecLastTimerDrawMs >= 500);
 
-  if (!needRing && !needTimer) return;
+  if (!needPulse && !needTimer) return;
 
-  if (needRing) {
-    int oldR = gRecDrawnR >= 0 ? gRecDrawnR : r;
-    refreshListeningRingBand(oldR, r);
-    drawListeningRing(kListenRx, kListenCy, r, minOk);
-    gRecDrawnR = r;
+  if (needPulse) {
+    refreshListeningPulseBand();
+    drawListeningPulse(pulseOn);
+    gRecPulseOn = pulseOn;
   }
 
   if (needTimer) {
     refreshListeningTimerBand();
-    drawListeningTimer(elapsedMs, minOk);
+    drawListeningTimer(elapsedMs);
     gRecDrawnSec = sec;
     gRecLastTimerDrawMs = elapsedMs;
   }
 
-  gRecMinOk = minOk;
   display->EPD_DisplayPartTrigger();
 }
 
-void bleVoiceUiSetSendProgress(int percent) {
-  gSendPct = constrain(percent, 0, 100);
+void bleVoiceUiSetSendProgress(uint32_t sentBytes, uint32_t totalBytes, uint32_t elapsedMs) {
   if (gUiState != BLE_UI_SENDING) return;
   if (displayBusy()) return;
+  if (totalBytes == 0) totalBytes = 1;
 
-  beginBufferDraw();
-  drawProgressBar(gSendPct);
-  endBufferDraw();
-  refreshAsyncFromBuffer();
+  if (gSendDrawnDeg < 0) {
+    paintSendingFull(sentBytes, totalBytes, elapsedMs);
+    display->EPD_DisplayPartTrigger();
+    return;
+  }
+
+  int endDeg = (int)((360ULL * sentBytes) / totalBytes);
+  if (endDeg > 360) endDeg = 360;
+
+  char subtitle[32];
+  formatSendSubtitle(subtitle, sizeof(subtitle), sentBytes, totalBytes, elapsedMs);
+
+  bool needArc = (endDeg != gSendDrawnDeg);
+  bool needText = strcmp(subtitle, gSendDrawnSubtitle) != 0
+      || (elapsedMs - gSendLastDrawMs >= 250);
+  if (!needArc && !needText) return;
+
+  if (needArc) {
+    refreshSendRingBand();
+    drawSendTrack(kListenRx, kListenCy, kSendRingR);
+    drawSendArc(kListenRx, kListenCy, kSendRingR, endDeg);
+    gSendDrawnDeg = endDeg;
+  }
+
+  if (needText) {
+    refreshSendTextBand();
+    drawSendSubtitle(subtitle);
+    strncpy(gSendDrawnSubtitle, subtitle, sizeof(gSendDrawnSubtitle) - 1);
+    gSendDrawnSubtitle[sizeof(gSendDrawnSubtitle) - 1] = '\0';
+    gSendLastDrawMs = elapsedMs;
+  }
+
+  display->EPD_DisplayPartTrigger();
+}
+
+void bleVoiceUiFinishSending(uint32_t totalBytes, uint32_t elapsedMs) {
+  if (gUiState != BLE_UI_SENDING) return;
+
+  while (displayBusy()) delay(10);
+  paintSendingFull(totalBytes, totalBytes, elapsedMs);
+  display->EPD_DisplayPartTrigger();
+  while (displayBusy()) delay(10);
+  delay(200);
 }
 
 void bleVoiceUiShowResult(const char* text) {

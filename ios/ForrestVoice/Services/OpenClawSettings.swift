@@ -48,6 +48,14 @@ final class OpenClawSettings: ObservableObject {
         allowSelfSignedCertificate = UserDefaults.standard.object(forKey: Keys.allowSelfSigned) as? Bool ?? true
         deliveryChannel = UserDefaults.standard.string(forKey: Keys.deliveryChannel) ?? ""
         deliveryTo = UserDefaults.standard.string(forKey: Keys.deliveryTo) ?? ""
+        migrateHooksTokenKeychainAccessibility()
+    }
+
+    /// Re-save token with AfterFirstUnlock so background BLE processing can read it.
+    private func migrateHooksTokenKeychainAccessibility() {
+        let token = trimmedHooksToken
+        guard !token.isEmpty else { return }
+        KeychainStore.save(token, account: Keys.hooksTokenKeychain)
     }
 
     var hooksToken: String {
@@ -63,7 +71,15 @@ final class OpenClawSettings: ObservableObject {
     }
 
     var isConfigured: Bool {
-        !normalizedBaseURL().isEmpty && !trimmedHooksToken.isEmpty
+        configurationGaps.isEmpty
+    }
+
+    /// Empty when ready to send; otherwise names the missing field(s).
+    var configurationGaps: [String] {
+        var gaps: [String] = []
+        if normalizedBaseURL().isEmpty { gaps.append("gateway URL") }
+        if trimmedHooksToken.isEmpty { gaps.append("hooks token") }
+        return gaps
     }
 
     var trimmedHooksToken: String {

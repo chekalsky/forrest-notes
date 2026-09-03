@@ -58,8 +58,16 @@ final class RecordingProcessor {
     }
 
     private func forwardToOpenClaw(transcript: String, recordingId: UInt16) async {
-        guard OpenClawSettings.shared.isConfigured else {
-            AppLog.shared.log("openclaw", "Skipped id=\(recordingId) — configure gateway in Settings")
+        let settings = OpenClawSettings.shared
+        guard settings.isConfigured else {
+            let missing = settings.configurationGaps.joined(separator: ", ")
+            let bg = UIApplication.shared.applicationState != .active
+            let status = "Skipped: missing \(missing)"
+            AppLog.shared.log(
+                "openclaw",
+                "Skipped id=\(recordingId) — \(status) background=\(bg)"
+            )
+            try? store.saveOpenClawStatus(recordingId: recordingId, status: status)
             return
         }
 

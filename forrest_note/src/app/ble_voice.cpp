@@ -211,6 +211,7 @@ static bool sendWavFile(const char* path) {
   }
 
   bleVoiceUiSetState(BLE_UI_SENDING);
+  bleVoiceUiSetSendProgress(0, totalBytes, 0);
   notifyStatus(FV_STATE_TRANSFERRING);
   bleVoiceTouchActivity();
 
@@ -249,7 +250,7 @@ static bool sendWavFile(const char* path) {
 
   uint32_t sent = 0;
   uint16_t seq = 0;
-  int lastUiPct = -1;
+  uint32_t lastUiMs = 0;
   uint32_t t0 = millis();
   bool ok = true;
 
@@ -275,10 +276,10 @@ static bool sendWavFile(const char* path) {
 
     sent += payloadLen;
 
-    int pct = (int)((sent * 100UL) / totalBytes);
-    if (pct >= lastUiPct + 10) {
-      bleVoiceUiSetSendProgress(pct);
-      lastUiPct = pct;
+    uint32_t elapsed = millis() - t0;
+    if (elapsed - lastUiMs >= 200) {
+      bleVoiceUiSetSendProgress(sent, totalBytes, elapsed);
+      lastUiMs = elapsed;
     }
 
     if (seq % FV_ACK_EVERY == (FV_ACK_EVERY - 1) || sent >= totalBytes) {
@@ -311,6 +312,7 @@ static bool sendWavFile(const char* path) {
   gRecordingId++;
   notifyStatus(FV_STATE_SUCCESS);
   uint32_t ms = millis() - t0;
+  bleVoiceUiFinishSending(totalBytes, ms);
   Serial.printf("[BLE] sent %s (%u bytes, %u chunks, %u ms, ~%u KB/s)\n",
                 path, sent, seq, ms, ms ? (unsigned)(sent / ms) : 0);
   bleVoiceUiShowResult("Sent");
@@ -527,19 +529,12 @@ static bool recordHoldToFile(const char* path) {
   uint32_t t0 = millis();
   uint32_t lastFlush = millis();
   uint32_t lastUi = millis();
-  int recPeak = 0;
   bool writeOk = true;
 
   auto drain = [&](TickType_t wait) -> bool {
     size_t got = 0;
     void* item = xRingbufferReceive(ctx.ring, &got, wait);
     if (!item) return false;
-    int16_t* sp = (int16_t*)item;
-    int ns = (int)(got / 2);
-    for (int i = 0; i < ns; i++) {
-      int a = abs(sp[i]);
-      if (a > recPeak) recPeak = a;
-    }
     size_t written = f.write((uint8_t*)item, got);
     vRingbufferReturnItem(ctx.ring, item);
     totalMono += written;
@@ -562,10 +557,7 @@ static bool recordHoldToFile(const char* path) {
     }
     if (millis() - lastUi >= 400) {
       lastUi = millis();
-      int lvl = (int)((long)recPeak * 152L * 3L / 32767L);
-      if (lvl > 152) lvl = 152;
-      bleVoiceUiUpdateListening(millis() - t0, lvl);
-      recPeak = 0;
+      bleVoiceUiUpdateListening(millis() - t0);
     }
   }
 

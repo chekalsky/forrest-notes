@@ -15,8 +15,9 @@ enum BleVoiceUiState : uint8_t {
 void bleVoiceUiInit();
 void bleVoiceUiSetPhoneConnected(bool connected);
 void bleVoiceUiSetState(BleVoiceUiState state, const char* detail = nullptr);
-void bleVoiceUiUpdateListening(uint32_t elapsedMs, int level);
-void bleVoiceUiSetSendProgress(int percent);
+void bleVoiceUiUpdateListening(uint32_t elapsedMs);
+void bleVoiceUiSetSendProgress(uint32_t sentBytes, uint32_t totalBytes, uint32_t elapsedMs);
+void bleVoiceUiFinishSending(uint32_t totalBytes, uint32_t elapsedMs);
 void bleVoiceUiSetQueueCount(int count);
 void bleVoiceUiShowResult(const char* text);
 
