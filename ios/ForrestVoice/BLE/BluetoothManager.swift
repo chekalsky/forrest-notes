@@ -48,7 +48,7 @@ final class BluetoothManager: NSObject, ObservableObject {
         logCancellable = AppLog.shared.objectWillChange.sink { [weak self] _ in
             self?.objectWillChange.send()
         }
-        RecordingProcessor.shared.onFinished = { [weak self] in
+        RecordingProcessor.shared.onRecordingsChanged = { [weak self] in
             Task { @MainActor in self?.recordingsRevision += 1 }
         }
         central = CBCentralManager(

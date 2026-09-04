@@ -2,7 +2,9 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject private var bluetooth: BluetoothManager
+    @EnvironmentObject private var playback: AudioPlaybackService
     @ObservedObject private var settings = OpenClawSettings.shared
+    @ObservedObject private var transcriptionSettings = TranscriptionSettings.shared
     @State private var hooksToken = ""
     @State private var tokenLoaded = false
     @State private var testResult: String?
@@ -16,6 +18,18 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
+            Section {
+                Picker("Language", selection: $transcriptionSettings.language) {
+                    ForEach(TranscriptionLanguage.allCases) { option in
+                        Text(option.label).tag(option)
+                    }
+                }
+            } header: {
+                Text("Transcription")
+            } footer: {
+                Text("Auto tries Russian and your system language, then picks the best match. Use Russian for notes always in Russian.")
+            }
+
             Section {
                 TextField("Gateway URL", text: $settings.gatewayBaseURL, prompt: Text("https://host:18789"))
                     .textInputAutocapitalization(.never)
@@ -97,6 +111,7 @@ struct SettingsView: View {
             Button("Erase", role: .destructive) {
                 eraseResult = nil
                 do {
+                    playback.stop()
                     try bluetooth.eraseAllLogsAndRecordings()
                     eraseResult = "Erased logs and recordings"
                 } catch {
@@ -146,6 +161,7 @@ struct SettingsView: View {
     NavigationStack {
         SettingsView()
             .environmentObject(BluetoothManager())
+            .environmentObject(AudioPlaybackService())
     }
 }
 #endif

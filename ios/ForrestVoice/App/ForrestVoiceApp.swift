@@ -3,6 +3,7 @@ import SwiftUI
 @main
 struct ForrestVoiceApp: App {
     @StateObject private var bluetooth = BluetoothManager()
+    @StateObject private var playback = AudioPlaybackService()
 
     init() {
         NotificationService.shared.configure()
@@ -13,6 +14,7 @@ struct ForrestVoiceApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(bluetooth)
+                .environmentObject(playback)
                 .task {
                     _ = await NotificationService.shared.requestAuthorization()
                     AppLog.shared.log("app", "Notification authorization requested")

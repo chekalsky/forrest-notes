@@ -15,6 +15,7 @@
 		30B6F1BE4CC1F6C3C68605FD /* AppLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91BBE893C2EE857FADB71627 /* AppLog.swift */; };
 		3C3A0C456B6F941881F32467 /* TransferProgressView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EFFF62A9D4365F8EB1E4F38 /* TransferProgressView.swift */; };
 		3DFFCCD638D3B3CB16751D76 /* ForrestVoiceApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1CD6EE8EEF659F04320F810 /* ForrestVoiceApp.swift */; };
+		5A46FCD1B85C874C99699349 /* TranscriptionSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 657FF434FD29B3399CCDD98F /* TranscriptionSettings.swift */; };
 		608F046DEFE9EF93B98F86BF /* RecordingProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65BBC635BEA5D07846933A7B /* RecordingProcessor.swift */; };
 		6605B8A7CDEC08D32325BDFE /* TransferProgressInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFAC9209EFED8E1C64AB3BBA /* TransferProgressInfo.swift */; };
 		85B7D50951FF650B451016AD /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A08F6C011E125F60FEFB5CF7 /* NotificationService.swift */; };
@@ -25,6 +26,7 @@
 		C15DEC2F1D47113D4AE1A309 /* BluetoothManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB53B36672D9F8553B9BAA84 /* BluetoothManager.swift */; };
 		D079AD7C6758D6F374A5F5C4 /* TransferAckSender.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83C11074A8B92450B637D889 /* TransferAckSender.swift */; };
 		D35D45B981EBB8445D47BF10 /* DeviceSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5D74967A272DE1F2B2B336C /* DeviceSession.swift */; };
+		E535F2A1F1370C2FB414C946 /* AudioPlaybackService.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF450099602B46815C0FA3B8 /* AudioPlaybackService.swift */; };
 		FF0100017F034415BC82B7AF /* OpenClawSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8F8DECE28466F7A698E522 /* OpenClawSettings.swift */; };
 /* End PBXBuildFile section */
 
@@ -33,6 +35,7 @@
 		26A2C167C35719C1C3152AD7 /* ForrestVoice.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ForrestVoice.entitlements; sourceTree = "<group>"; };
 		46C07AC3F583220418F4AE26 /* AudioTransferManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioTransferManager.swift; sourceTree = "<group>"; };
 		4DF453F244E681047060D68F /* ForrestVoice.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = ForrestVoice.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		657FF434FD29B3399CCDD98F /* TranscriptionSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionSettings.swift; sourceTree = "<group>"; };
 		65BBC635BEA5D07846933A7B /* RecordingProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingProcessor.swift; sourceTree = "<group>"; };
 		7C8F8DECE28466F7A698E522 /* OpenClawSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenClawSettings.swift; sourceTree = "<group>"; };
 		83C11074A8B92450B637D889 /* TransferAckSender.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransferAckSender.swift; sourceTree = "<group>"; };
@@ -49,6 +52,7 @@
 		D2C552EB44B2AE2ACED613DB /* OpenClawURLSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenClawURLSession.swift; sourceTree = "<group>"; };
 		D5D74967A272DE1F2B2B336C /* DeviceSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceSession.swift; sourceTree = "<group>"; };
 		D8B01C466C3D32A1CB929C05 /* RecordingStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingStore.swift; sourceTree = "<group>"; };
+		DF450099602B46815C0FA3B8 /* AudioPlaybackService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioPlaybackService.swift; sourceTree = "<group>"; };
 		EB53B36672D9F8553B9BAA84 /* BluetoothManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BluetoothManager.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -104,6 +108,7 @@
 				D2C552EB44B2AE2ACED613DB /* OpenClawURLSession.swift */,
 				65BBC635BEA5D07846933A7B /* RecordingProcessor.swift */,
 				978797963EB1527422F4B17F /* SpeechTranscriptionService.swift */,
+				657FF434FD29B3399CCDD98F /* TranscriptionSettings.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -111,6 +116,7 @@
 		D75825719116A8EC3AD9E1B1 /* Audio */ = {
 			isa = PBXGroup;
 			children = (
+				DF450099602B46815C0FA3B8 /* AudioPlaybackService.swift */,
 				46C07AC3F583220418F4AE26 /* AudioTransferManager.swift */,
 				D8B01C466C3D32A1CB929C05 /* RecordingStore.swift */,
 				CFAC9209EFED8E1C64AB3BBA /* TransferProgressInfo.swift */,
@@ -195,6 +201,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				30B6F1BE4CC1F6C3C68605FD /* AppLog.swift in Sources */,
+				E535F2A1F1370C2FB414C946 /* AudioPlaybackService.swift in Sources */,
 				AABE64FFA8CA5EF3645FA5C0 /* AudioTransferManager.swift in Sources */,
 				C15DEC2F1D47113D4AE1A309 /* BluetoothManager.swift in Sources */,
 				ACD8B83D03CFB5DB7B1D4D72 /* ContentView.swift in Sources */,
@@ -210,6 +217,7 @@
 				278609E7580236E9516288E6 /* RecordingStore.swift in Sources */,
 				9EB355FC74CCE74055CE7E54 /* SettingsView.swift in Sources */,
 				2A70C85F6FB38047275F2DA0 /* SpeechTranscriptionService.swift in Sources */,
+				5A46FCD1B85C874C99699349 /* TranscriptionSettings.swift in Sources */,
 				D079AD7C6758D6F374A5F5C4 /* TransferAckSender.swift in Sources */,
 				6605B8A7CDEC08D32325BDFE /* TransferProgressInfo.swift in Sources */,
 				3C3A0C456B6F941881F32467 /* TransferProgressView.swift in Sources */,

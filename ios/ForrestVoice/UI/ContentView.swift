@@ -3,6 +3,7 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject private var bluetooth: BluetoothManager
+    @EnvironmentObject private var playback: AudioPlaybackService
     @ObservedObject private var appLog = AppLog.shared
 
     var body: some View {
@@ -55,31 +56,7 @@ struct ContentView: View {
                             .foregroundStyle(.secondary)
                     } else {
                         ForEach(items) { rec in
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(rec.filename)
-                                    .font(.body.monospaced())
-                                Text("\(rec.byteCount / 1024) KB · \(rec.receivedAt.formatted())")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                if let transcript = rec.transcript, !transcript.isEmpty {
-                                    Text(transcript)
-                                        .font(.subheadline)
-                                        .foregroundStyle(.primary)
-                                } else if let err = rec.transcriptionError {
-                                    Text(err)
-                                        .font(.caption)
-                                        .foregroundStyle(.red)
-                                } else {
-                                    Text("Transcribing…")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                                if let oc = rec.openClawStatus {
-                                    Text(oc)
-                                        .font(.caption2)
-                                        .foregroundStyle(oc.hasPrefix("Error") ? .red : .secondary)
-                                }
-                            }
+                            RecordingRow(rec: rec)
                         }
                     }
                 }
@@ -136,9 +113,95 @@ struct ContentView: View {
     }
 }
 
+private struct RecordingRow: View {
+    let rec: SavedRecording
+    @EnvironmentObject private var playback: AudioPlaybackService
+    @ObservedObject private var processor = RecordingProcessor.shared
+
+    private var isActive: Bool { playback.isActiveRecording(rec) }
+    private var showProgress: Bool { playback.playingId == rec.id && playback.duration > 0 }
+    private var isRetranscribing: Bool { processor.activeRecordingId == rec.recordingId }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Button {
+                playback.toggle(rec)
+            } label: {
+                Image(systemName: isActive ? "pause.circle.fill" : "play.circle.fill")
+                    .font(.title2)
+                    .foregroundStyle(playback.playingId == rec.id ? Color.accentColor : .secondary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(isActive ? "Pause" : "Play")
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 8) {
+                    Text(rec.filename)
+                        .font(.body.monospaced())
+                    Spacer(minLength: 8)
+                    Button {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        processor.retranscribe(rec)
+                    } label: {
+                        Group {
+                            if isRetranscribing {
+                                ProgressView()
+                                    .controlSize(.small)
+                            } else {
+                                Image(systemName: "arrow.clockwise")
+                                    .font(.caption)
+                            }
+                        }
+                        .frame(width: 22, height: 22)
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(isRetranscribing)
+                    .accessibilityLabel(isRetranscribing ? "Retranscribing" : "Retranscribe")
+                }
+                Text("\(rec.byteCount / 1024) KB · \(rec.receivedAt.formatted())")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if showProgress {
+                    ProgressView(value: playback.progress)
+                    Text("\(AudioPlaybackService.formatTime(playback.currentTime)) / \(AudioPlaybackService.formatTime(playback.duration))")
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(.secondary)
+                }
+                if isRetranscribing {
+                    HStack(spacing: 6) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Retranscribing…")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                } else if let transcript = rec.transcript, !transcript.isEmpty {
+                    Text(transcript)
+                        .font(.subheadline)
+                        .foregroundStyle(.primary)
+                } else if let err = rec.transcriptionError {
+                    Text(err)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                } else {
+                    Text("Transcribing…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                if let oc = rec.openClawStatus {
+                    Text(oc)
+                        .font(.caption2)
+                        .foregroundStyle(oc.hasPrefix("Error") ? .red : .secondary)
+                }
+            }
+        }
+    }
+}
+
 #if DEBUG
 #Preview {
     ContentView()
         .environmentObject(BluetoothManager())
+        .environmentObject(AudioPlaybackService())
 }
 #endif
